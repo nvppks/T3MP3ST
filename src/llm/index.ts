@@ -1207,6 +1207,8 @@ export class LLMBackbone extends EventEmitter<LLMEvents> {
         return new OpenAIAdapter(config);
       case 'xai':
         return new OpenAIAdapter(config); // xAI (Grok Build / grok-*) is OpenAI-compatible
+      case 'gemini':
+        return new OpenAIAdapter(config); // Gemini via Google's OpenAI-compatible endpoint (baseUrl ends in /v1beta/openai)
       case 'codex':
         return new CodexAdapter(config);
       case 'mock':
