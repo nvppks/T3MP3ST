@@ -223,26 +223,31 @@ function resolveBin(bin: string): string | undefined {
 /**
  * Windows-safe launcher for a resolved agent binary.
  *
- * A `.cmd`/`.bat` shim can't be spawned directly (shell:false throws EINVAL/ENOEXEC). The common
- * "fix" — `spawn(bin, args, { shell: true })` — is UNSAFE here: runLocalAgent puts the (untrusted)
- * prompt straight into argv (claude `-p <prompt>`, codex `exec … <prompt>`), and shell:true would
- * route that prompt through cmd.exe where `&`, `|`, `>`, `%VAR%` become metacharacters → command
- * injection in a security tool. Instead we invoke cmd.exe explicitly with an ARGV ARRAY
- * (`cmd.exe /d /s /c <shim> <arg1> <arg2> …`) and shell:false. Node hands each element to the child
- * as a distinct argv entry with no shell re-parsing, so cmd.exe resolves the `.cmd` association while
- * the prompt is never interpreted. Real `.exe`/POSIX binaries spawn directly (no wrapper).
+ * A `.cmd`/`.bat` shim can't be spawned with shell:false (Node throws EINVAL on Windows) — it must
+ * run through cmd.exe. But hand-rolling `spawn('cmd.exe', ['/d','/s','/c', shim, ...args])` is
+ * UNSAFE: cmd.exe re-parses its command tail with its OWN rules and does not honor `\"`-escaping, so
+ * the (untrusted, adversarial) prompt reaching argv — claude `-p <prompt>`, codex `exec <prompt>` —
+ * can contain `"` + `& | > %VAR%` and break out to execute (the BatBadBut / CVE-2024-1874 class;
+ * verified: a `x" & echo PWNED` payload ran).
+ *
+ * The safe route is Node's OWN `.cmd` handling: `spawn(shim, args, { shell: true })`. On Node
+ * >=18.20.2 / >=20.12.2 / >=21 (CVE-2024-27980 fix) Node escapes each arg for cmd, so the whole
+ * prompt lands as a SINGLE literal argument and cannot break out (verified on Node 24: the same
+ * payload arrived intact in %1). Real `.exe`/POSIX binaries spawn directly with shell:false.
  */
 function spawnAgent(resolvedBin: string, args: string[], options: import('child_process').SpawnOptions): import('child_process').ChildProcess {
   if (needsShell(resolvedBin)) {
-    return spawn('cmd.exe', ['/d', '/s', '/c', resolvedBin, ...args], { ...options, shell: false });
+    // shell:true lets Node run the .cmd via cmd.exe WITH its CVE-2024-27980 arg-escaping (safe);
+    // the manual cmd.exe wrapper bypassed that escaping and was injectable.
+    return spawn(resolvedBin, args, { ...options, shell: true });
   }
   return spawn(resolvedBin, args, { ...options, shell: false });
 }
 
 /**
  * True when the resolved binary is a Windows `.cmd`/`.bat` shim (npm global installs land as these).
- * Such a shim can't be spawned directly — it must go through cmd.exe (see spawnAgent, which does so
- * SAFELY via an argv array rather than shell:true). `.exe` and POSIX binaries return false.
+ * Such a shim can't be spawned with shell:false — it must go through cmd.exe (see spawnAgent, which
+ * does so SAFELY via Node's own shell:true `.cmd` arg-escaping). `.exe` and POSIX binaries return false.
  */
 function needsShell(resolvedBin: string): boolean {
   return isWindows && /\.(cmd|bat)$/i.test(resolvedBin);
@@ -266,9 +271,13 @@ function detectOne(spec: AgentSpec): Promise<AgentDetection> {
     id: spec.id, label: spec.label, vendor: spec.vendor, bin: spec.bin,
     blurb: spec.blurb, invokeHint: spec.invokeHint,
   };
-  const resolved = resolveBin(spec.bin);
+  // POSIX fallback: if neither `command -v` nor `which` resolved it (e.g. a bash-less/busybox image
+  // where both are absent) still try the bare name — the OS resolves it against PATH at exec time,
+  // and the ENOENT branch below correctly flips a genuinely-absent binary to not-installed. Windows
+  // keeps `resolved` authoritative: a bare npm `.cmd` shim name has no safe direct spawn.
+  const resolved = resolveBin(spec.bin) || (isWindows ? undefined : spec.bin);
   return new Promise((resolve) => {
-    // Not on PATH at all → genuinely not installed.
+    // Not resolvable at all → genuinely not installed.
     if (!resolved) {
       resolve({ ...base, installed: false, authed: false, ready: false });
       return;
