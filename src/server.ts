@@ -30,7 +30,7 @@ import { OPERATOR_SYSTEM_PROMPTS, PLINIAN_OPERATOR_DOCTRINE, THE_FIXER_SYSTEM_PR
 import { createTargetFromUrl, createTargetFromIP } from './target/index.js';
 import type { OperatorArchetype } from './types/index.js';
 import { listOperatorPrompts, setOperatorOverride, resetOperatorOverride, type OperatorOverride } from './operators/index.js';
-import { ingestRepoToSourceContext, runWhiteboxAnalysis, resolveContainedRepoPath, RepoPathError } from './recon/whitebox.js';
+import { ingestRepoToSourceContext, runWhiteboxAnalysis, resolveRepoSourceForAnalysis, RepoCloneError, RepoPathError } from './recon/whitebox.js';
 import { redactCredential } from './evidence/index.js';
 
 const execFileAsync = promisify(execFile);
@@ -6215,27 +6215,15 @@ app.post('/api/mission/start', async (req: Request, res: Response): Promise<void
     if (!guard.allowed) { blockForApproval(res, guard); return; }
   }
 
-  if (provider === 'local-agent') {
-    const localAgent = await requireLiveLocalAgent(model);
-    if (!localAgent.ok) {
-      res.status(503).json({ error: localAgent.error });
-      return;
-    }
-  }
-
-  // B-03: if an OPTIONAL white-box repoPath was supplied, containment-check it HERE
-  // (canonicalize + confine to the allowed root) before we build/start the command,
-  // so a bad/escaping path 400s cleanly instead of half-starting a run.
-  let containedRepoPath: string | undefined;
+  let repoSource: ReturnType<typeof resolveRepoSourceForAnalysis> | undefined;
   if (typeof repoPath === 'string' && repoPath.trim()) {
     try {
-      containedRepoPath = resolveContainedRepoPath(repoPath);
+      repoSource = resolveRepoSourceForAnalysis(repoPath);
     } catch (e) {
       if (e instanceof RepoPathError) { res.status(400).json({ error: `repoPath rejected: ${e.message}` }); return; }
-      // Guarantee a response even for an unexpected error — a bare `throw` in this async
-      // handler becomes an unhandledRejection (Express 4 won't route it), hanging the client.
-      console.error('[T3MP3ST] repoPath validation error:', e);
-      res.status(500).json({ error: 'repoPath validation failed' });
+      if (e instanceof RepoCloneError) { res.status(400).json({ error: e.message }); return; }
+      console.error('[T3MP3ST] repo source validation error:', e);
+      res.status(500).json({ error: 'repo source validation failed' });
       return;
     }
   }
@@ -6277,13 +6265,13 @@ app.post('/api/mission/start', async (req: Request, res: Response): Promise<void
     // exists on disk, ingest + security-rank it and feed the packed source into
     // the command before it starts, so operators analyze real source you own
     // rather than probing a black box. Reads LOCAL disk only — no network target.
-    let whitebox: { includedUnits: number; droppedUnits: number; stats: unknown } | undefined;
-    if (containedRepoPath) {
-      const wb = ingestRepoToSourceContext(containedRepoPath);
+    let whitebox: { includedUnits: number; droppedUnits: number; stats: unknown; source: 'local' | 'github' } | undefined;
+    if (repoSource) {
+      const wb = ingestRepoToSourceContext(repoSource.repoPath);
       // Only feed a NON-empty source (0 ingestable units → don't overwrite the operators'
       // black-box view with an empty blob; the includedUnits:0 in the response signals it).
       if (wb.sourceContext.trim()) cmd.setWhiteboxSource(wb.sourceContext);
-      whitebox = { includedUnits: wb.includedUnits, droppedUnits: wb.droppedUnits, stats: wb.stats };
+      whitebox = { includedUnits: wb.includedUnits, droppedUnits: wb.droppedUnits, stats: wb.stats, source: repoSource.source };
     }
 
     // Start the command loop (auto-creates mission, auto-dispatches tasks)
@@ -6307,6 +6295,8 @@ app.post('/api/mission/start', async (req: Request, res: Response): Promise<void
   } catch (error: any) {
     console.error('[T3MP3ST] Mission start failed:', error);
     res.status(500).json({ error: error.message || 'Failed to start mission' });
+  } finally {
+    repoSource?.cleanup();
   }
 });
 
@@ -6330,29 +6320,19 @@ app.post('/api/whitebox/analyze', async (req: Request, res: Response): Promise<v
     res.status(400).json({ error: 'objective required' });
     return;
   }
-  // B-03: containment-check the operator-supplied repoPath (canonicalize + confine
-  // to the allowed root) BEFORE any disk read; a bad/escaping path 400s, not 500s.
-  let safeRepoPath: string;
-  try {
-    safeRepoPath = resolveContainedRepoPath(repoPath);
-  } catch (e) {
-    if (e instanceof RepoPathError) { res.status(400).json({ error: e.message }); return; }
-    // Guarantee a response even for an unexpected error — a bare `throw` in this async
-    // handler becomes an unhandledRejection (Express 4 won't route it), hanging the client.
-    console.error('[T3MP3ST] repoPath validation error:', e);
-    res.status(500).json({ error: 'repoPath validation failed' });
-    return;
-  }
-
   try {
     const result = await runWhiteboxAnalysis({
-      repoPath: safeRepoPath,
+      repoPath: typeof repoPath === 'string' ? repoPath : '',
       objective,
       maxRounds: typeof maxRounds === 'number' ? maxRounds : undefined,
     });
     res.json(result);
   } catch (error: any) {
     console.error('[T3MP3ST] White-box analysis failed:', error);
+    if (error instanceof RepoPathError || error instanceof RepoCloneError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: error?.message || 'White-box analysis failed' });
   }
 });

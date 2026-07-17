@@ -11,7 +11,7 @@ import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import type { LLMProvider, LLMConfig, FallbackEntry, OpsecLevel } from '../types/index.js';
 
-type ApiKeyProvider = 'openrouter' | 'venice' | 'anthropic' | 'openai' | 'xai' | 'gemini' | 'litellm' | 'local';
+type ApiKeyProvider = 'openrouter' | 'venice' | 'anthropic' | 'openai' | 'xai' | 'gemini' | 'litellm' | 'deepseek' | 'local';
 
 // =============================================================================
 // CONFIGURATION SCHEMA
@@ -26,6 +26,7 @@ export interface TempestSettings {
     openai?: string;
     xai?: string;
     gemini?: string;
+    deepseek?: string;
     litellm?: string;
     local?: string;
   };
@@ -74,6 +75,12 @@ export interface TempestSettings {
 
   // Google Gemini — native Gemini API via its OpenAI-compatible endpoint
   gemini: {
+    baseUrl: string;
+    defaultModel: string;
+  };
+
+  // DeepSeek — OpenAI-compatible API
+  deepseek: {
     baseUrl: string;
     defaultModel: string;
   };
@@ -152,6 +159,11 @@ const DEFAULT_SETTINGS: TempestSettings = {
   gemini: {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     defaultModel: 'gemini-2.5-flash',
+  },
+
+  deepseek: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
   },
 
   codex: {
@@ -490,6 +502,24 @@ export const AVAILABLE_MODELS: Record<LLMProvider, ModelInfo[]> = {
       capabilities: ['reasoning', 'code', 'analysis', 'vision', 'fast', 'tools'],
     },
   ],
+  deepseek: [
+    {
+      id: 'deepseek-chat',
+      name: 'DeepSeek V3 (native)',
+      provider: 'DeepSeek',
+      contextWindow: 64000,
+      maxOutput: 8192,
+      capabilities: ['reasoning', 'code', 'analysis', 'tools'],
+    },
+    {
+      id: 'deepseek-reasoner',
+      name: 'DeepSeek R1 (native)',
+      provider: 'DeepSeek',
+      contextWindow: 64000,
+      maxOutput: 8192,
+      capabilities: ['reasoning', 'code', 'analysis', 'complex-tasks'],
+    },
+  ],
   local: [
     {
       id: 'local-model',
@@ -568,7 +598,7 @@ class ConfigManager {
         const envContent = readFileSync(envPath, 'utf-8');
         const lines = envContent.split('\n');
         // Validation variables added
-        const VALID_PROVIDERS = ['openrouter', 'venice', 'anthropic', 'openai', 'xai', 'gemini', 'litellm', 'local'];
+        const VALID_PROVIDERS = ['openrouter', 'venice', 'anthropic', 'openai', 'xai', 'gemini', 'litellm', 'deepseek', 'local'];
 
         for (const line of lines) {
           const trimmed = line.trim();
@@ -653,6 +683,7 @@ class ConfigManager {
       openai: 'OPENAI_API_KEY',
       xai: 'XAI_API_KEY',
       gemini: 'GEMINI_API_KEY',
+      deepseek: 'DEEPSEEK_API_KEY',
       litellm: 'LITELLM_API_KEY',
     };
 
@@ -709,6 +740,7 @@ class ConfigManager {
     if (this.hasApiKey('xai')) providers.push('xai');
     if (this.hasLiteLLMProxy()) providers.push('litellm');
     if (this.hasApiKey('gemini')) providers.push('gemini');
+    if (this.hasApiKey('deepseek')) providers.push('deepseek');
 
     // Codex uses the local Codex CLI/account auth instead of API-key storage.
     providers.push('codex');
@@ -776,6 +808,12 @@ class ConfigManager {
         baseUrl = this.config.get('gemini').baseUrl;
         actualModel = model || this.config.get('gemini').defaultModel;
         break;
+      case 'deepseek':
+        // DeepSeek native API is OpenAI-compatible.
+        apiKey = this.getApiKey('deepseek');
+        baseUrl = this.config.get('deepseek').baseUrl;
+        actualModel = model || this.config.get('deepseek').defaultModel;
+        break;
       case 'codex':
         actualModel = model || this.config.get('codex').defaultModel;
         break;
@@ -825,7 +863,7 @@ class ConfigManager {
     const flag = (process.env.TEMPEST_MODEL_FALLBACK || '').trim().toLowerCase();
     if (!flag || ['0', 'false', 'off', 'no'].includes(flag)) return [];
     const chain: FallbackEntry[] = [];
-    const add = (p: 'openrouter' | 'venice' | 'anthropic' | 'openai' | 'xai' | 'gemini' | 'litellm') => {
+    const add = (p: 'openrouter' | 'venice' | 'anthropic' | 'openai' | 'xai' | 'gemini' | 'litellm' | 'deepseek') => {
       if (p === primary) return;
       if (p === 'litellm' ? !this.hasLiteLLMProxy() : !this.hasApiKey(p)) return;
       chain.push({
@@ -842,6 +880,7 @@ class ConfigManager {
     add('openai');
     add('xai');
     add('gemini');
+    add('deepseek');
     return chain;
   }
 
@@ -864,6 +903,9 @@ class ConfigManager {
         break;
       case 'openai':
         this.config.set('defaultModel', this.config.get('openai').defaultModel);
+        break;
+      case 'deepseek':
+        this.config.set('defaultModel', this.config.get('deepseek').defaultModel);
         break;
       case 'xai':
         this.config.set('defaultModel', this.config.get('xai').defaultModel);
@@ -899,6 +941,9 @@ class ConfigManager {
         break;
       case 'openai':
         this.config.set('openai', { ...this.config.get('openai'), defaultModel: model });
+        break;
+      case 'deepseek':
+        this.config.set('deepseek', { ...this.config.get('deepseek'), defaultModel: model });
         break;
       case 'xai':
         this.config.set('xai', { ...this.config.get('xai'), defaultModel: model });
@@ -948,6 +993,7 @@ class ConfigManager {
         openai: settings.apiKeys.openai ? '***REDACTED***' : undefined,
         xai: settings.apiKeys.xai ? '***REDACTED***' : undefined,
         gemini: settings.apiKeys.gemini ? '***REDACTED***' : undefined,
+        deepseek: settings.apiKeys.deepseek ? '***REDACTED***' : undefined,
         litellm: settings.apiKeys.litellm ? '***REDACTED***' : undefined,
       },
     };
@@ -991,6 +1037,10 @@ LITELLM_MODEL=gpt-4o
 # Google Gemini API Key (direct Gemini API via its OpenAI-compatible endpoint)
 # Get your key at: https://aistudio.google.com/apikey
 GEMINI_API_KEY=
+
+# DeepSeek API Key (direct DeepSeek API via its OpenAI-compatible endpoint)
+# Get your key at: https://platform.deepseek.com/api_keys
+DEEPSEEK_API_KEY=
 
 # Local model (Ollama / LM Studio / vLLM / llama.cpp, or any OpenAI-compatible server)
 # Point TEMPEST_LOCAL_BASE_URL at the server root (Ollama default shown below).

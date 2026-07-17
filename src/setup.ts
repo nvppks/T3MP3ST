@@ -194,6 +194,53 @@ async function setupAnthropicKey(): Promise<boolean> {
   }
 }
 
+async function setupDeepSeekKey(): Promise<boolean> {
+  console.log('');
+  showInfo('DeepSeek provides OpenAI-compatible chat and reasoning models.');
+  showInfo('Get your API key at: ' + chalk.underline('https://platform.deepseek.com/api_keys'));
+  console.log('');
+
+  const { apiKey } = await inquirer.prompt([
+    {
+      type: 'password',
+      name: 'apiKey',
+      message: 'Enter your DeepSeek API key:',
+      mask: '*',
+      validate: (input: string) => {
+        if (!input || input.length < 10) {
+          return 'Please enter a valid API key';
+        }
+        return true;
+      },
+    },
+  ]);
+
+  const spinner = ora('Testing API key...').start();
+
+  try {
+    const llm = new LLMBackbone({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey,
+      maxTokens: 10,
+      temperature: 0,
+    });
+
+    await llm.prompt('Hello', undefined, { maxTokens: 10 });
+    spinner.succeed('API key is valid!');
+
+    setApiKey('deepseek', apiKey);
+    showSuccess('DeepSeek API key saved successfully!');
+
+    return true;
+  } catch (error) {
+    spinner.fail('API key validation failed');
+    showError(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+}
+
 async function setupOpenAIKey(): Promise<boolean> {
   console.log('');
   showInfo('OpenAI provides access to GPT models.');
@@ -368,6 +415,7 @@ You can use a local model with no API key, or add a key from one of these provid
 • ${chalk.cyan('OpenRouter')} (recommended) - Access multiple models
 • ${chalk.cyan('Anthropic')} - Direct Claude access
 • ${chalk.cyan('OpenAI')} - GPT models
+• ${chalk.cyan('DeepSeek')} - OpenAI-compatible chat/reasoning models
 • ${chalk.cyan('LiteLLM')} - AI gateway proxy (100+ providers)
 
 The setup will guide you through:
@@ -381,13 +429,17 @@ The setup will guide you through:
   const hasOpenRouter = hasApiKey('openrouter');
   const hasAnthropic = hasApiKey('anthropic');
   const hasOpenAI = hasApiKey('openai');
+  const hasDeepSeek = hasApiKey('deepseek');
+  const hasLiteLLM = config.hasLiteLLMProxy();
 
-  if (hasOpenRouter || hasAnthropic || hasOpenAI) {
+  if (hasOpenRouter || hasAnthropic || hasOpenAI || hasDeepSeek || hasLiteLLM) {
     console.log('');
     showInfo('Existing API keys detected:');
     if (hasOpenRouter) showSuccess('  OpenRouter: configured');
     if (hasAnthropic) showSuccess('  Anthropic: configured');
     if (hasOpenAI) showSuccess('  OpenAI: configured');
+    if (hasDeepSeek) showSuccess('  DeepSeek: configured');
+    if (hasLiteLLM) showSuccess('  LiteLLM Proxy: configured');
     console.log('');
 
     const { action } = await inquirer.prompt([
@@ -468,6 +520,10 @@ async function setupApiKeys(): Promise<void> {
           value: 'openai',
         },
         {
+          name: `DeepSeek ${hasApiKey('deepseek') ? chalk.green('(configured)') : ''}`,
+          value: 'deepseek',
+        },
+        {
           name: `LiteLLM Proxy ${config.hasLiteLLMProxy() ? chalk.green('(configured)') : chalk.gray('(100+ providers via gateway)')}`,
           value: 'litellm',
         },
@@ -489,6 +545,9 @@ async function setupApiKeys(): Promise<void> {
       case 'openai':
         await setupOpenAIKey();
         break;
+      case 'deepseek':
+        await setupDeepSeekKey();
+        break;
       case 'litellm':
         await setupLiteLLMProxy();
         break;
@@ -504,6 +563,7 @@ async function setupProvider(): Promise<void> {
   if (hasApiKey('venice')) configuredProviders.push({ name: 'Venice', value: 'venice' });
   if (hasApiKey('anthropic')) configuredProviders.push({ name: 'Anthropic', value: 'anthropic' });
   if (hasApiKey('openai')) configuredProviders.push({ name: 'OpenAI', value: 'openai' });
+  if (hasApiKey('deepseek')) configuredProviders.push({ name: 'DeepSeek', value: 'deepseek' });
   if (config.hasLiteLLMProxy()) configuredProviders.push({ name: 'LiteLLM Proxy', value: 'litellm' });
 
   const { provider } = await inquirer.prompt([
@@ -535,6 +595,8 @@ function viewConfiguration(): void {
   console.log('    Venice: ' + (hasApiKey('venice') ? chalk.green('configured') : chalk.red('not set')));
   console.log('    Anthropic: ' + (hasApiKey('anthropic') ? chalk.green('configured') : chalk.red('not set')));
   console.log('    OpenAI: ' + (hasApiKey('openai') ? chalk.green('configured') : chalk.red('not set')));
+  console.log('    DeepSeek: ' + (hasApiKey('deepseek') ? chalk.green('configured') : chalk.red('not set')));
+  console.log('    LiteLLM Proxy: ' + (config.hasLiteLLMProxy() ? chalk.green('configured') : chalk.red('not set')));
   console.log('');
   console.log(chalk.cyan('  Config Path: ') + config.getConfigPath());
   console.log('');
