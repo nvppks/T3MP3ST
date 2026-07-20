@@ -345,6 +345,7 @@ export class HarnessControlPlane {
     }
     const capturedAt = input.capturedAt ?? this.repository.now();
     const body = bodyBytes(input.bodyBase64);
+    const displayUrl = safeDisplayUrl(input.url);
     const rawEnvelope = {
       method,
       url: input.url,
@@ -355,7 +356,7 @@ export class HarnessControlPlane {
     };
     const reportEnvelope = {
       method,
-      url: safeDisplayUrl(input.url),
+      url: displayUrl,
       headers: redactHeaders(input.headers),
       bodySha256: sha256(body),
       bodySize: body.length,
@@ -390,9 +391,9 @@ export class HarnessControlPlane {
       scheme: url.protocol === 'https:' ? 'https' : 'http',
       host: url.hostname.toLowerCase(),
       port: url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80,
-      path: url.pathname || '/',
+      path: new URL(displayUrl).pathname || '/',
       pathTemplate: normalizePath(url.pathname || '/'),
-      displayUrl: safeDisplayUrl(input.url),
+      displayUrl,
       queryParameters: [...new Set(url.searchParams.keys())].sort(),
       bodySha256: sha256(body),
       authCapsuleId: input.authCapsuleId,
