@@ -1,0 +1,36 @@
+name: Harness control plane
+
+on:
+  push:
+    branches: ['agent/harness-control-plane']
+    paths:
+      - 'src/harness/**'
+      - 'src/integrations/burp/server.ts'
+      - 'src/__tests__/harness-control-plane.test.ts'
+      - 'docs/HARNESS-CONTROL-PLANE.md'
+      - '.github/workflows/harness-control-plane.yml'
+      - 'package.json'
+  pull_request:
+    paths:
+      - 'src/harness/**'
+      - 'src/integrations/burp/server.ts'
+      - 'src/__tests__/harness-control-plane.test.ts'
+      - 'docs/HARNESS-CONTROL-PLANE.md'
+      - '.github/workflows/harness-control-plane.yml'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:harness
