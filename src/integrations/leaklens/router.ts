@@ -7,6 +7,7 @@ import {
   runLeakLensScan,
   type LeakLensRunOptions,
   type LeakLensScanRequest,
+  type LeakLensScanResult,
 } from './index.js';
 
 export interface LeakLensRouterOptions extends LeakLensRunOptions {
@@ -16,6 +17,32 @@ export interface LeakLensRouterOptions extends LeakLensRunOptions {
 function validationEnabled(options: LeakLensRouterOptions): boolean {
   if (options.allowValidation !== undefined) return options.allowValidation;
   return /^(1|true|on)$/i.test(process.env.T3MP3ST_LEAKLENS_ALLOW_VALIDATE ?? '');
+}
+
+export function redactLeakLensSource(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = '';
+    url.password = '';
+    url.hash = '';
+    const keys = [...new Set(url.searchParams.keys())];
+    url.search = '';
+    for (const key of keys) url.searchParams.append(key, '[REDACTED]');
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function sanitizeResult(result: LeakLensScanResult): LeakLensScanResult {
+  return {
+    ...result,
+    source: redactLeakLensSource(result.source),
+    findings: result.findings.map((finding) => ({
+      ...finding,
+      source: redactLeakLensSource(finding.source),
+    })),
+  };
 }
 
 function sendError(res: Response, error: unknown): void {
@@ -42,7 +69,7 @@ export function createLeakLensRouter(options: LeakLensRouterOptions = {}): Route
         ...options,
         allowValidation: validationEnabled(options),
       });
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...sanitizeResult(result) });
     } catch (error) {
       sendError(res, error);
     }
