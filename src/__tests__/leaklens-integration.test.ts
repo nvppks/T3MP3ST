@@ -8,6 +8,7 @@ import {
   type LeakLensProcessResult,
   type LeakLensRunner,
 } from '../integrations/leaklens/index.js';
+import { redactLeakLensSource } from '../integrations/leaklens/router.js';
 import type { ProgramScope } from '../bounty/index.js';
 
 const scope: ProgramScope = {
@@ -48,6 +49,16 @@ describe('LeakLens integration', () => {
     });
     expect(JSON.stringify(findings)).not.toContain(secret);
     expect(maskSecret('short')).toBe('***');
+  });
+
+  it('redacts credentials and query values from returned source locations', () => {
+    const source = redactLeakLensSource('https://user:pass@app.example.test/app.js?token=secret&v=42#fragment');
+    expect(source).toContain('token=%5BREDACTED%5D');
+    expect(source).toContain('v=%5BREDACTED%5D');
+    expect(source).not.toContain('user');
+    expect(source).not.toContain('pass');
+    expect(source).not.toContain('secret');
+    expect(source).not.toContain('fragment');
   });
 
   it('builds bounded crawler arguments and never enables AI implicitly', () => {
