@@ -125,7 +125,7 @@ public final class LeakLensBurpExtension implements BurpExtension, ContextMenuIt
         payload.addProperty("fileName", fileName(uri));
         payload.addProperty("jsIntel", true);
         payload.add("scope", exactScope(uri, message.request().method()));
-        postScan(payload, "response " + uri);
+        postScan(payload, "response " + displayUri(uri));
     }
 
     private void scanAssetUrl(String url) {
@@ -136,7 +136,7 @@ public final class LeakLensBurpExtension implements BurpExtension, ContextMenuIt
         payload.addProperty("crawl", false);
         payload.addProperty("jsIntel", true);
         payload.add("scope", exactScope(uri, "GET"));
-        postScan(payload, "asset " + uri);
+        postScan(payload, "asset " + displayUri(uri));
     }
 
     private void crawlApplication(String url) {
@@ -150,7 +150,7 @@ public final class LeakLensBurpExtension implements BurpExtension, ContextMenuIt
         payload.addProperty("rateLimit", 3);
         payload.addProperty("concurrency", 2);
         payload.add("scope", exactScope(origin, "GET"));
-        postScan(payload, "crawl " + origin);
+        postScan(payload, "crawl " + displayUri(origin));
     }
 
     private JsonObject exactScope(URI uri, String method) {
@@ -175,6 +175,12 @@ public final class LeakLensBurpExtension implements BurpExtension, ContextMenuIt
         int slash = path.lastIndexOf('/');
         String candidate = slash >= 0 ? path.substring(slash + 1) : path;
         return candidate.isBlank() ? "burp-response.js" : candidate;
+    }
+
+    private String displayUri(URI uri) {
+        String path = uri.getRawPath();
+        if (path == null || path.isBlank()) path = "/";
+        return uri.getScheme() + "://" + uri.getRawAuthority() + path;
     }
 
     private void checkHealth() {
