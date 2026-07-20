@@ -21,10 +21,31 @@ export function safeDisplayUrl(value: string): string {
   url.username = '';
   url.password = '';
   url.hash = '';
+  url.pathname = url.pathname
+    .split('/')
+    .map((segment) => safePathSegment(segment))
+    .join('/');
   const names = [...new Set(url.searchParams.keys())].sort();
   url.search = '';
   for (const name of names) url.searchParams.append(name, '[redacted]');
   return url.toString();
+}
+
+function safePathSegment(segment: string): string {
+  if (!segment) return segment;
+  let decoded = segment;
+  try {
+    decoded = decodeURIComponent(segment);
+  } catch {
+    return 'redacted';
+  }
+  if (redactString(decoded) !== decoded) return 'redacted';
+  if (/^[0-9a-f]{16,}$/i.test(decoded)) return 'redacted';
+  if (/^[A-Za-z0-9_-]{24,}={0,2}$/.test(decoded)) return 'redacted';
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(decoded)) {
+    return 'redacted';
+  }
+  return decoded;
 }
 
 export function bodyBytes(bodyBase64: string | undefined): Buffer {
