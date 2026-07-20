@@ -3,6 +3,9 @@ dist/
 .env
 *.tsbuildinfo
 
+# Local bug-bounty harness state, bearer token, raw evidence, and report bundles
+.t3mp3st-harness/
+
 # --- excluded from the published repo ---
 # raw upstream Cybench corpus (181M third-party content incl. writeups/flags/solutions — do not redistribute)
 bench/cybench/corpus-stage/
