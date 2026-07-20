@@ -96,11 +96,12 @@ describe('HarnessControlPlane', () => {
     });
 
     const rawToken = 'Bearer test-token-1234567890abcdef';
+    const pathToken = 'abcdef0123456789abcdef0123456789';
     const request = await plane!.ingestRequest({
       programId: 'acme-bounty',
       source: 'burp',
       method: 'GET',
-      url: 'https://app.example.test/api/orders/123?access_token=abc123&view=full',
+      url: `https://app.example.test/api/orders/123/${pathToken}?access_token=abc123&view=full`,
       headers: {
         Authorization: rawToken,
         Cookie: 'session=operator-secret',
@@ -111,19 +112,24 @@ describe('HarnessControlPlane', () => {
       capturedAt: clock,
     });
 
-    expect(request.pathTemplate).toBe('/api/orders/{int}');
+    expect(request.pathTemplate).toBe('/api/orders/{int}/{hex}');
+    expect(request.path).toBe('/api/orders/123/redacted');
     expect(request.displayUrl).not.toContain('abc123');
+    expect(request.displayUrl).not.toContain(pathToken);
     await expect(plane!.readArtifact(request.sealedRequestArtifactId)).rejects.toThrow(/sealed artifact/);
 
     const sealed = await plane!.readArtifact(request.sealedRequestArtifactId, { allowSealed: true });
     expect(sealed.toString()).toContain(rawToken);
+    expect(sealed.toString()).toContain(pathToken);
     const report = await plane!.readArtifact(request.reportRequestArtifactId);
     expect(report.toString()).not.toContain(rawToken);
+    expect(report.toString()).not.toContain(pathToken);
     expect(report.toString()).toContain('[redacted]');
 
     const state = await readFile(plane!.statePath, 'utf8');
     expect(state).not.toContain(rawToken);
     expect(state).not.toContain('operator-secret');
+    expect(state).not.toContain(pathToken);
   });
 
   it('rejects off-scope work and inline secret-like job config', async () => {
