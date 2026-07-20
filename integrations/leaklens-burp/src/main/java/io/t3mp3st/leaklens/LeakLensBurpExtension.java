@@ -5,6 +5,7 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
 import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
+import burp.api.montoya.ui.contextmenu.MessageEditorHttpRequestResponse;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -57,10 +58,10 @@ public final class LeakLensBurpExtension implements BurpExtension, ContextMenuIt
 
     @Override
     public List<Component> provideMenuItems(ContextMenuEvent event) {
-        Optional<HttpRequestResponse> selected = event.messageEditorRequestResponse();
+        Optional<MessageEditorHttpRequestResponse> selected = event.messageEditorRequestResponse();
         if (selected.isEmpty()) return List.of();
 
-        HttpRequestResponse message = selected.get();
+        HttpRequestResponse message = selected.get().requestResponse();
         JMenu root = new JMenu("T3MP3ST LeakLens");
 
         if (message.response() != null) {
