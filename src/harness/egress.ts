@@ -1,8 +1,3 @@
-import {
-  configureProxy,
-  initProxyFromConfig,
-  parseProxyUrl,
-} from '../net/proxy.js';
 import type { HarnessControlPlane } from './control-plane.js';
 import type { HarnessJob } from './types.js';
 
@@ -42,6 +37,9 @@ function parseProfile(config: Record<string, unknown>): HarnessEgressProfile {
  * Upstream's SOCKS dispatcher is process-global. Networked harness jobs therefore
  * execute under one shared lock whenever an explicit egress profile is applied.
  * This keeps two programs from racing to replace the global dispatcher.
+ *
+ * The proxy module is loaded lazily: queue-only/local-read harness users should not
+ * have to initialize undici's proxy runtime merely by importing the worker contract.
  */
 export class HarnessEgressManager {
   private static tail: Promise<void> = Promise.resolve();
@@ -57,6 +55,11 @@ export class HarnessEgressManager {
     if (profile.mode === 'inherit') return operation();
 
     return this.exclusive(async () => {
+      const {
+        configureProxy,
+        initProxyFromConfig,
+        parseProxyUrl,
+      } = await import('../net/proxy.js');
       try {
         if (profile.mode === 'direct') {
           configureProxy(null);
