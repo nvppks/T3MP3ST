@@ -8,16 +8,36 @@
  * itself makes (worker + orchestrator models). It is otherwise pure of network
  * side effects.
  *
- * SCOPE CAVEAT (inherited from code-ingest): the ingest layer is a PYTHON-ONLY,
- * regex "AST-lite" prototype — see recon/code-ingest.ts. It selects which Python
- * blocks to analyze first by security exposure; anything non-`.py` or imported
- * from outside the scan scope is invisible. Do NOT describe this as "any repo".
+ * SCOPE CAVEAT (inherited from code-ingest): the ingest layer extracts blocks via
+ * web-tree-sitter for Python/JS/TS/Go/Java/C/C++ (Python uses the regex "AST-lite"
+ * path; other languages fail-open to [] — never the Python regex — on a grammar
+ * miss or parse error) — see recon/code-ingest.ts + recon/ts-parse.ts. It selects which
+ * blocks to analyze first by security exposure; a language without a bundled grammar,
+ * or code imported from outside the scan scope, is invisible. Do NOT describe this as
+ * "any repo" or "any language".
+ *
+ * KNOWN v1 EXTRACTION LIMITS (fail-safe — these shapes are silently NOT extracted or
+ * under-linked, never mis-extracted; all strictly better than the prior Python-only
+ * ingest, and tracked as follow-ups):
+ *   - JS/TS: only `function`/`method`/`class` declarations are captured. Arrow-function
+ *     and function-expression definitions (`const f = () => …`) are not — idiomatic in
+ *     modern TS, so their sinks may go unranked.
+ *   - C++: only free functions are captured. In-class and out-of-line (`Class::method`)
+ *     member methods are not — a materially narrower C++ story than "full support".
+ *   - Entry-point elevation for non-Python code relies on name heuristics only; no
+ *     language emits `decorators`, so annotation-based routes (Spring `@GetMapping`,
+ *     TS `@Get()`, Express `app.get(...)`) are not elevated to `exposed_externally`.
+ *   - Call-graph/reachability: buildCallGraph strips a block's signature line before
+ *     scanning for callees (kept unchanged for Python-benchmark stability), so a
+ *     SINGLE-LINE non-Python definition (`func F(u) { return G(u) }`) misses the call
+ *     on that line — the block is still extracted and sink-classified, only the edge
+ *     is lost.
  */
 
 import { config } from '../config/index.js';
 import {
   ingestRepository,
-  createPythonIngestConfig,
+  createMultiLangIngestConfig,
   packAnalysisUnits,
 } from './code-ingest.js';
 import { DecompositionOrchestrator } from '../orchestration/index.js';
@@ -218,7 +238,7 @@ export function ingestRepoToSourceContext(
 ): RepoSourceContext {
   const source = resolveRepoSourceForAnalysis(repoPath);
   try {
-    const result = ingestRepository(createPythonIngestConfig(source.repoPath));
+    const result = ingestRepository(createMultiLangIngestConfig(source.repoPath));
     const packed = packAnalysisUnits(result.analysisUnits, tokenBudget);
     return {
       sourceContext: packed.text,
@@ -302,21 +322,21 @@ export async function runWhiteboxAnalysis(
 
   // 1) ingest source, security-rank the blocks
   try {
-    const result = ingestRepository(createPythonIngestConfig(source.repoPath));
+    const result = ingestRepository(createMultiLangIngestConfig(source.repoPath));
 
     // 2) pack into a generous source view (orchestrator re-packs per-worker itself)
     const packed = packAnalysisUnits(result.analysisUnits, DEFAULT_ANALYSIS_SOURCE_BUDGET);
     const sourceContext = packed.text;
 
   // Fail loud ONLY when there is genuinely NO source to analyze: 0 ingestable source files
-  // (non-Python or empty repo). A valid Python repo that has files but no def/class (a
-  // module-level-only script) yields 0 blocks -> empty packed text; that used to run the
-  // orchestrator, so we do NOT regress it into a 500 — gate the throw on the file count, not
-  // on empty packed text, and let a files>0 repo proceed as before.
+  // (no supported-language files, or empty repo). A valid repo that has files but no
+  // def/class/func (a module-level-only script) yields 0 blocks -> empty packed text; that
+  // used to run the orchestrator, so we do NOT regress it into a 500 — gate the throw on the
+  // file count, not on empty packed text, and let a files>0 repo proceed as before.
     if (result.stats.files === 0) {
       throw new Error(
       'white-box analysis has no analyzable source: the repo has 0 ingestable source files ' +
-        '(non-Python, or empty). Point repoPath at a Python codebase.',
+        '(no supported-language source, or empty). Point repoPath at a code repository.',
       );
     }
 

@@ -439,7 +439,12 @@ export function runLocalAgent(
 /** A cheap liveness probe — asks the agent to echo a token. SPENDS a tiny bit of the agent's quota. */
 export function pingLocalAgent(id: string, prompt?: string, timeoutMs?: number): Promise<AgentRunResult> {
   return runLocalAgent(id, prompt || 'Reply with exactly the single word: PONG', {
-    timeoutMs: timeoutMs ?? 90000,
+    // A local reasoning model spends tens of seconds "thinking" even on this trivial probe
+    // (and can hit finish_reason=length mid-think). A fixed 90s that ignores the env scaler
+    // falsely marks a slow-but-alive agent not-live, with no config knob to raise it — while
+    // real dispatches (runLocalAgent/localAgentChat) already scale up to 600s. Mirror them:
+    // a dedicated PING knob, falling back to the shared dispatch timeout, then 90s.
+    timeoutMs: timeoutMs ?? envTimeoutMs('T3MP3ST_LOCAL_AGENT_PING_TIMEOUT_MS', envTimeoutMs('T3MP3ST_LOCAL_AGENT_TIMEOUT_MS', 90000)),
     maxChars: 400,
   });
 }

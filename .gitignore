@@ -68,3 +68,6 @@ scripts/.export-denylist.local
 !.aiwg/addons/**
 
 server.pid
+
+# vitest v8 coverage output
+coverage/

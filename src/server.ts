@@ -16,7 +16,9 @@ import { appendFile, mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { promisify } from 'util';
 import { createHash, randomUUID } from 'crypto';
-import { config } from './config/index.js';
+import { config, AVAILABLE_MODELS } from './config/index.js';
+import { resolveModels } from './config/provider-models.js';
+import { initProxyFromConfig, configureProxy, getProxyStatus, checkIp, invalidateIpCache } from './net/proxy.js';
 import { redactString, redactLedgerText, redactSecrets } from './redact.js';
 import { LLMBackbone } from './llm/index.js';
 import { TempestCommand } from './index.js';
@@ -28,12 +30,17 @@ import { AGENT_PROMPT_PACKS, FOREFRONT_PRESSURE_LANES, OPERATOR_RUNBOOKS, RESOUR
 import { AI_REDTEAM_PLAYBOOK, AI_REDTEAM_TECHNIQUE_IDS, aiRedTeamBriefing } from './resources/ai-redteam-playbook.js';
 import { OPERATOR_SYSTEM_PROMPTS, PLINIAN_OPERATOR_DOCTRINE, THE_FIXER_SYSTEM_PROMPT } from './prompts/index.js';
 import { createTargetFromUrl, createTargetFromIP } from './target/index.js';
-import type { OperatorArchetype } from './types/index.js';
+import type { OperatorArchetype, LLMProvider } from './types/index.js';
 import { listOperatorPrompts, setOperatorOverride, resetOperatorOverride, type OperatorOverride } from './operators/index.js';
 import { ingestRepoToSourceContext, runWhiteboxAnalysis, resolveRepoSourceForAnalysis, RepoCloneError, RepoPathError } from './recon/whitebox.js';
+import { initGrammars } from './recon/ts-grammars.js';
 import { redactCredential } from './evidence/index.js';
 
 const execFileAsync = promisify(execFile);
+
+function isKnownLLMProvider(provider: string): provider is LLMProvider {
+  return Object.prototype.hasOwnProperty.call(AVAILABLE_MODELS, provider);
+}
 
 // =============================================================================
 // PAYLOAD DATABASES (Shared with MCP server)
@@ -312,11 +319,29 @@ function getTempestCommand(): TempestCommand | null {
   return tempestCommand;
 }
 
-function createTempestCommandInstance(missionName: string, apiKey: string | undefined, provider: string, model: string): TempestCommand {
+// Validate a client-supplied LOCAL model base URL. Any host:port is allowed — the
+// feature exists to reach the operator's OWN local/LAN model server (llama.cpp / Ollama),
+// and the loopback bind + origin guard already restrict callers to the local operator —
+// so only the URL shape + scheme are enforced, blocking gopher:/file:/etc. Returns
+// { value } where value is the trimmed URL, or null when nothing was supplied.
+function sanitizeLocalBaseUrl(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (typeof raw !== 'string' || !raw.trim()) return { ok: true, value: null };
+  const v = raw.trim();
+  let parsed: URL;
+  try { parsed = new URL(v); } catch { return { ok: false, error: 'Invalid baseUrl' }; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { ok: false, error: 'baseUrl must be http(s)' };
+  }
+  return { ok: true, value: v };
+}
+
+function createTempestCommandInstance(missionName: string, apiKey: string | undefined, provider: string, model: string, baseUrl?: string): TempestCommand {
   // Tear down previous instance
   if (tempestCommand) {
     tempestCommand.stop();
   }
+
+  const baseConfig = config.getLLMConfig(provider as any, model);
 
   tempestCommand = new TempestCommand({
     name: missionName,
@@ -324,6 +349,11 @@ function createTempestCommandInstance(missionName: string, apiKey: string | unde
       provider: provider as any,
       model,
       apiKey,
+      baseUrl: baseConfig.baseUrl,
+      // Only a LOCAL provider honors a per-request base URL (the operator's own
+      // llama.cpp / Ollama host). Never set it for cloud providers — that would
+      // let a request redirect a cloud call to an attacker-chosen endpoint.
+      ...(baseUrl && provider === 'local' ? { baseUrl } : {}),
       maxTokens: 4096,
       temperature: 0.7,
     },
@@ -4845,6 +4875,42 @@ app.get('/api/mission-context/latest', (_req: Request, res: Response) => {
   res.json(latestMissionContext());
 });
 
+// =============================================================================
+// OUTBOUND PROXY (SOCKS5) + EGRESS IP CHECK
+// The War Room routes probe/attack fetch() through a SOCKS5 proxy so tests don't
+// leave from the operator's own IP. These endpoints drive the top-right IP badge
+// and the Settings proxy field. See src/net/proxy.ts.
+// =============================================================================
+
+// Current proxy config (credential-redacted).
+app.get('/api/net/proxy', (_req: Request, res: Response) => {
+  res.json({ ...getProxyStatus(), configured: Boolean(config.getProxyUrl()) });
+});
+
+// Set/clear the proxy. Body: { url: 'socks5://[user:pass@]host:port' } or { url: '' }.
+// Persists to config and installs the global dispatcher live (no restart needed).
+app.post('/api/net/proxy', (req: Request, res: Response): void => {
+  const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+  const result = configureProxy(url || null);
+  if (result.error) {
+    res.status(400).json({ error: result.error, ...result });
+    return;
+  }
+  config.setProxyUrl(url);
+  invalidateIpCache();
+  res.json({ ok: true, ...result });
+});
+
+// Egress IP + leak check (exit IP through proxy vs. real IP direct). Drives the badge.
+app.get('/api/net/ip', async (req: Request, res: Response): Promise<void> => {
+  const force = /^(1|true|yes)$/i.test(String(req.query.force || ''));
+  try {
+    res.json(await checkIp(force));
+  } catch (e) {
+    res.status(502).json({ error: `IP check failed: ${String((e as Error)?.message || e)}` });
+  }
+});
+
 app.get('/api/arsenal/catalog', (req: Request, res: Response) => {
   const family = typeof req.query.family === 'string' ? normalizeMissionFamily(req.query.family, 'web_api') : undefined;
   const category = typeof req.query.category === 'string' ? req.query.category : '';
@@ -6088,6 +6154,34 @@ app.get('/api/llm/status', (_req: Request, res: Response) => {
   });
 });
 
+// POST /api/models — live model list for the Universal API Config panel (#90).
+// POST (not GET) so the browser can pass its own localStorage-held key/baseUrl in the body — the
+// standalone UI holds the key, not the server (consistent with the existing per-request mission key,
+// and it stays on localhost). Body values override server config; missing → server config. Runs
+// server-side so the browser dodges provider CORS, and fails open to the static AVAILABLE_MODELS list
+// (source:'static') so a missing key / network error never leaves the panel empty.
+app.post('/api/models', async (req: Request, res: Response): Promise<void> => {
+  const body = (req.body ?? {}) as { provider?: string; apiKey?: string; baseUrl?: string };
+  const defaultProvider = config.getLLMConfig().provider;
+  const requestedProvider = (typeof body.provider === 'string' && body.provider.trim()) || defaultProvider;
+  const provider = isKnownLLMProvider(requestedProvider) ? requestedProvider : defaultProvider;
+  // getLLMConfig throws for any provider it doesn't switch on (e.g. the legitimate 'local-agent', or a
+  // garbage string). A synchronous throw inside this async handler would hang the request (Express 4
+  // never responds), so swallow it and fall through to the static list — the route must always answer.
+  let cfg: { baseUrl?: string; apiKey?: string } = {};
+  try { cfg = config.getLLMConfig(provider); } catch { /* provider has no remote/server config → static fallback */ }
+  const bodyBaseUrl = typeof body.baseUrl === 'string' && body.baseUrl.trim() ? body.baseUrl : undefined;
+  const bodyKey = typeof body.apiKey === 'string' && body.apiKey ? body.apiKey : undefined;
+  // Bind key+baseUrl by source: a caller-supplied custom baseUrl must bring its OWN key — never lend
+  // the server's configured apiKey to a body-chosen URL (that would disclose the stored key). The
+  // server key is only ever sent to the server's own configured provider endpoint.
+  const baseUrl = bodyBaseUrl ?? cfg.baseUrl;
+  const apiKey = bodyBaseUrl ? bodyKey : (bodyKey ?? cfg.apiKey);
+  const staticFallback = AVAILABLE_MODELS[provider].map((m: { id: string }) => ({ id: m.id }));
+  const resolved = await resolveModels(provider, { baseUrl, apiKey, staticFallback });
+  res.json({ provider, ...resolved });
+});
+
 // =============================================================================
 // TOOL EXECUTION ENDPOINTS
 // =============================================================================
@@ -6178,6 +6272,7 @@ app.post('/api/mission/start', async (req: Request, res: Response): Promise<void
     apiKey,
     provider,
     model,
+    baseUrl, // local provider only: the operator's llama.cpp / Ollama host
     // OPTIONAL white-box source: an absolute path to a LOCAL repo you own. When
     // present, we ingest + security-rank it and hand the packed source to the
     // command via setWhiteboxSource BEFORE start(), so operators reason over the
@@ -6190,7 +6285,9 @@ app.post('/api/mission/start', async (req: Request, res: Response): Promise<void
   // SECURITY NOTE: apiKey is read from the request body (Authorization header is
   // preferred). Kept body-accepted for the same-origin UI; only reachable from
   // the local operator (loopback bind + origin guard). Header move is out of scope.
-  const missionLLMConfig = resolveGeneralLLMConfig(provider, model, apiKey);
+  const missionLLMConfig = baseUrl === undefined
+    ? resolveGeneralLLMConfig(provider, model, apiKey)
+    : resolveGeneralLLMConfig(provider, model, apiKey, baseUrl);
   const effectiveKey = missionLLMConfig.apiKey;
   if (providerNeedsApiKey(missionLLMConfig.provider) && !effectiveKey) {
     res.status(400).json({ error: 'API key required — pass apiKey, configure one on the server, or connect a local agent (Claude Code / Codex / Hermes)' });
@@ -6229,7 +6326,13 @@ app.post('/api/mission/start', async (req: Request, res: Response): Promise<void
   }
 
   try {
-    const cmd = createTempestCommandInstance(name, effectiveKey, missionLLMConfig.provider, missionLLMConfig.model);
+    const cmd = createTempestCommandInstance(
+      name,
+      effectiveKey,
+      missionLLMConfig.provider,
+      missionLLMConfig.model,
+      missionLLMConfig.baseUrl,
+    );
 
     // Add targets
     for (const t of targets) {
@@ -6704,10 +6807,11 @@ function readGeneralTimeoutEnv(): number | undefined {
 // the key in the body, so we accept it to avoid breaking it. Moving to a header
 // needs a coordinated UI change and is out of scope. The body key is only ever
 // reachable from the local operator (loopback bind + origin guard).
-function resolveGeneralLLMConfig(provider: string | undefined, model: string | undefined, apiKey: string | undefined): {
+function resolveGeneralLLMConfig(provider: string | undefined, model: string | undefined, apiKey: string | undefined, baseUrl?: string): {
   provider: any;
   model: string;
   apiKey?: string;
+  baseUrl?: string;
   maxTokens: number;
   temperature: number;
   timeout: number;
@@ -6728,7 +6832,21 @@ function resolveGeneralLLMConfig(provider: string | undefined, model: string | u
     };
   }
   const baseConfig = config.getLLMConfig(selectedProvider as any, model);
-  const effectiveKey = apiKey || baseConfig.apiKey;
+  // A per-request base URL is honored ONLY for the local provider (the operator's own
+  // llama.cpp / Ollama host). For any cloud provider it is ignored — never let a request
+  // redirect a cloud call. A malformed/non-HTTP URL throws (callers already 400 on throw).
+  let localBaseUrl: string | null = null;
+  if (selectedProvider === 'local') {
+    const bu = sanitizeLocalBaseUrl(baseUrl);
+    if (!bu.ok) throw new Error(bu.error);
+    localBaseUrl = bu.value;
+  }
+  // SECURITY: when a client picks the local base URL, never fall back to the
+  // server-configured key (TEMPEST_LOCAL_API_KEY / ZAI_API_KEY / ZHIPUAI_API_KEY —
+  // possibly a real cloud bearer). Only a client-supplied key reaches a client-chosen host.
+  const effectiveKey = (selectedProvider === 'local' && localBaseUrl)
+    ? (apiKey || undefined)
+    : (apiKey || baseConfig.apiKey);
   if (providerNeedsApiKey(selectedProvider) && !effectiveKey) {
     throw new Error('API key required — pass apiKey in body or configure on server');
   }
@@ -6736,6 +6854,10 @@ function resolveGeneralLLMConfig(provider: string | undefined, model: string | u
     provider: selectedProvider as any,
     model: model || baseConfig.model,
     apiKey: effectiveKey,
+    baseUrl: baseConfig.baseUrl,
+    // Only override the configured URL for a local provider. Cloud providers keep
+    // their own provider URL and cannot be redirected by a request.
+    ...(selectedProvider === 'local' && localBaseUrl ? { baseUrl: localBaseUrl } : {}),
     maxTokens: 8192,
     temperature: 0.4,
     timeout: readGeneralTimeoutEnv() ?? 300000, // General planning needs room (was a hardcoded 60s); override via env
@@ -6750,9 +6872,9 @@ function resolveGeneralLLMConfig(provider: string | undefined, model: string | u
  */
 function bringUpMissionFromPlan(
   execConfig: { missionName: string; targets: string[]; operators: string[] },
-  generalConfig: { apiKey?: string; provider: any; model: string },
+  generalConfig: { apiKey?: string; provider: any; model: string; baseUrl?: string },
 ): { spawnedOps: Array<{ id: string; callsign: string; archetype: string }>; status: any } {
-  const cmd = createTempestCommandInstance(execConfig.missionName, generalConfig.apiKey, generalConfig.provider, generalConfig.model);
+  const cmd = createTempestCommandInstance(execConfig.missionName, generalConfig.apiKey, generalConfig.provider, generalConfig.model, generalConfig.baseUrl);
   for (const target of execConfig.targets) {
     if (target.startsWith('http://') || target.startsWith('https://')) cmd.targetEnv.addTarget(createTargetFromUrl(target));
     else if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(target)) cmd.targetEnv.addTarget(createTargetFromIP(target));
@@ -6889,6 +7011,102 @@ app.post('/api/codex/probe', async (_req: Request, res: Response): Promise<void>
   }
 });
 
+// =============================================================================
+// LOCAL LLM PROXY — the browser "AI" features POST here so they can use a local
+// model (llama.cpp / Ollama / LM Studio / any OpenAI-compatible server) without
+// hitting the browser's CORS wall. Reuses LLMBackbone -> LocalAdapter. Same-origin,
+// loopback-bound and origin-guarded like every route. Local needs no API key
+// (providerNeedsApiKey excludes 'local'); a real key is forwarded when the operator
+// set one (e.g. llama.cpp --api-key).
+//
+// Body: { messages?: {role,content}[], prompt?: string, model?: string,
+//         baseUrl?: string, apiKey?: string, maxTokens?, temperature?, timeout? }
+//
+// NOTE: distinct path from the existing /api/llm/chat (which drives the default
+// `llm` singleton and ignores per-request baseUrl/model/apiKey) — this one is a
+// dedicated per-request LOCAL proxy the War Room's Local Model settings drive.
+// =============================================================================
+app.post('/api/llm/local', async (req: Request, res: Response): Promise<void> => {
+  const { messages, prompt, model, baseUrl, apiKey, maxTokens, temperature, timeout } = req.body || {};
+
+  // Accept either a messages[] array (preferred) or a single prompt string.
+  const msgs: Array<{ role: string; content: string }> = Array.isArray(messages)
+    ? messages
+    : (typeof prompt === 'string' ? [{ role: 'user', content: prompt }] : []);
+  if (!msgs.length) {
+    res.status(400).json({ error: 'Provide messages[] or prompt' });
+    return;
+  }
+
+  const bu = sanitizeLocalBaseUrl(baseUrl);
+  if (!bu.ok) { res.status(400).json({ error: bu.error }); return; }
+  const clientBaseUrl = bu.value || '';
+  const clientApiKey = (typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : '';
+
+  try {
+    // Base config from server env (TEMPEST_LOCAL_*); the UI Settings override
+    // base URL / model / key per request.
+    const base = config.getLLMConfig('local', (typeof model === 'string' && model) ? model : undefined);
+    // SECURITY: never forward the server-configured apiKey (TEMPEST_LOCAL_API_KEY /
+    // ZAI_API_KEY / ZHIPUAI_API_KEY — potentially a real cloud bearer) to a
+    // client-CHOSEN destination. If the request overrides baseUrl, only a
+    // client-supplied key is used; the server secret is applied ONLY when the
+    // server's own default baseUrl is used. This prevents credential exfiltration
+    // via an attacker-picked baseUrl.
+    const effectiveApiKey = clientBaseUrl ? (clientApiKey || undefined) : (clientApiKey || base.apiKey);
+    const llmConfig = {
+      ...base,
+      provider: 'local' as const,
+      model: (typeof model === 'string' && model) ? model : base.model,
+      baseUrl: clientBaseUrl || base.baseUrl,
+      apiKey: effectiveApiKey,
+      maxTokens: Number(maxTokens) > 0 ? Number(maxTokens) : 4096,
+      temperature: typeof temperature === 'number' ? temperature : 0.3,
+      timeout: Number(timeout) > 0 ? Number(timeout) : 120000,
+    };
+
+    // Propagate a client disconnect (browser abort / operator "stop") to the upstream
+    // local model call. Without this, the Node fetch to llama.cpp/Ollama keeps running
+    // to its own full timeout regardless of what the browser did, wasting the single
+    // inference slot local backends typically serve.
+    //
+    // Must listen on `res`, not `req`: the request stream ends (and auto-destroys,
+    // emitting 'close') as soon as express.json() finishes consuming the body — which
+    // happens before this handler even runs — so `req.on('close')` fired on every
+    // single call, aborting it instantly regardless of whether the client stayed
+    // connected. `res`'s 'close' event fires on both normal completion and premature
+    // disconnect; `writableEnded` disambiguates (false only means the client actually
+    // went away before we could respond).
+    const controller = new AbortController();
+    const onClose = () => { if (!res.writableEnded) controller.abort(); };
+    res.on('close', onClose);
+
+    const backbone = new LLMBackbone(llmConfig as any);
+    let result;
+    try {
+      result = await backbone.chat(msgs as any, {
+        maxTokens: llmConfig.maxTokens,
+        temperature: llmConfig.temperature,
+        signal: controller.signal,
+      });
+    } finally {
+      res.off('close', onClose);
+    }
+
+    // Return BOTH a bare `content` and an OpenRouter-shaped `choices[]`, so callers
+    // reading either shape keep working with no further change.
+    res.json({
+      content: result.content,
+      model: result.model,
+      usage: result.usage,
+      choices: [{ message: { role: 'assistant', content: result.content } }],
+    });
+  } catch (error: any) {
+    console.error('[T3MP3ST] /api/llm/chat failed:', error);
+    if (!res.headersSent) res.status(502).json({ error: error?.message || 'Local LLM request failed' });
+  }
+});
+
 /**
  * POST /api/general/plan — Give the General a directive, get back an OpPlan
  *
@@ -6906,6 +7124,7 @@ app.post('/api/general/plan', async (req: Request, res: Response): Promise<void>
     apiKey,
     provider,
     model,
+    baseUrl, // local provider only: the operator's llama.cpp / Ollama host
   } = req.body;
 
   if (!objective) {
@@ -6914,7 +7133,7 @@ app.post('/api/general/plan', async (req: Request, res: Response): Promise<void>
   }
 
   try {
-    const generalConfig = resolveGeneralLLMConfig(provider, model, apiKey);
+    const generalConfig = resolveGeneralLLMConfig(provider, model, apiKey, baseUrl);
     // Create a dedicated LLM backbone for the General
     const generalLLM = new LLMBackbone(generalConfig);
 
@@ -6980,11 +7199,12 @@ app.post('/api/general/execute', async (req: Request, res: Response): Promise<vo
     apiKey,
     provider,
     model,
+    baseUrl, // local provider only: the operator's llama.cpp / Ollama host
   } = req.body;
 
   let generalConfig;
   try {
-    generalConfig = resolveGeneralLLMConfig(provider, model, apiKey);
+    generalConfig = resolveGeneralLLMConfig(provider, model, apiKey, baseUrl);
   } catch (error: any) {
     res.status(400).json({ error: error.message || 'API key required' });
     return;
@@ -7012,7 +7232,8 @@ app.post('/api/general/execute', async (req: Request, res: Response): Promise<vo
       execConfig.missionName,
       generalConfig.apiKey,
       generalConfig.provider,
-      generalConfig.model
+      generalConfig.model,
+      generalConfig.baseUrl
     );
 
     // Add targets from the plan
@@ -7093,6 +7314,7 @@ app.post('/api/general/auto', async (req: Request, res: Response): Promise<void>
     apiKey,
     provider,
     model,
+    baseUrl, // local provider only: the operator's llama.cpp / Ollama host
   } = req.body;
 
   if (!objective) {
@@ -7102,7 +7324,7 @@ app.post('/api/general/auto', async (req: Request, res: Response): Promise<void>
 
   let generalConfig;
   try {
-    generalConfig = resolveGeneralLLMConfig(provider, model, apiKey);
+    generalConfig = resolveGeneralLLMConfig(provider, model, apiKey, baseUrl);
   } catch (error: any) {
     res.status(400).json({ error: error.message || 'API key required' });
     return;
@@ -7157,7 +7379,8 @@ app.post('/api/general/auto', async (req: Request, res: Response): Promise<void>
       execConfig.missionName,
       generalConfig.apiKey,
       generalConfig.provider,
-      generalConfig.model
+      generalConfig.model,
+      generalConfig.baseUrl
     );
 
     for (const target of execConfig.targets) {
@@ -7350,8 +7573,8 @@ import { Admiral, briefToDirective, type ChatMsg, type MissionBrief } from './ad
  */
 app.post('/api/admiral/converse', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { messages, provider, model, apiKey } = req.body as {
-      messages: ChatMsg[]; provider?: string; model?: string; apiKey?: string;
+    const { messages, provider = 'openrouter', model, apiKey, baseUrl } = req.body as {
+      messages: ChatMsg[]; provider?: string; model?: string; apiKey?: string; baseUrl?: string;
     };
     if (!Array.isArray(messages) || messages.length === 0) {
       res.status(400).json({ error: 'messages[] required' });
@@ -7361,7 +7584,7 @@ app.post('/api/admiral/converse', async (req: Request, res: Response): Promise<v
     if (llm) {
       admiralLLM = llm;
     } else {
-      const cfg = resolveGeneralLLMConfig(provider, model, apiKey);
+      const cfg = resolveGeneralLLMConfig(provider, model, apiKey, baseUrl);
       admiralLLM = new LLMBackbone(cfg);
     }
     const admiral = new Admiral(admiralLLM);
@@ -7380,8 +7603,8 @@ app.post('/api/admiral/converse', async (req: Request, res: Response): Promise<v
  */
 app.post('/api/admiral/suggest', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { operatorPrompt, archetype, failureSignal, provider, model, apiKey } = req.body as {
-      operatorPrompt?: string; archetype?: string; failureSignal?: string; provider?: string; model?: string; apiKey?: string;
+    const { operatorPrompt, archetype, failureSignal, provider = 'openrouter', model, apiKey, baseUrl } = req.body as {
+      operatorPrompt?: string; archetype?: string; failureSignal?: string; provider?: string; model?: string; apiKey?: string; baseUrl?: string;
     };
     let prompt = typeof operatorPrompt === 'string' ? operatorPrompt : '';
     if (!prompt && archetype) {
@@ -7395,7 +7618,7 @@ app.post('/api/admiral/suggest', async (req: Request, res: Response): Promise<vo
     let admiralLLM: LLMBackbone;
     if (llm) { admiralLLM = llm; }
     else {
-      const cfg = resolveGeneralLLMConfig(provider, model, apiKey);
+      const cfg = resolveGeneralLLMConfig(provider, model, apiKey, baseUrl);
       admiralLLM = new LLMBackbone(cfg);
     }
     const admiral = new Admiral(admiralLLM);
@@ -7415,8 +7638,8 @@ app.post('/api/admiral/suggest', async (req: Request, res: Response): Promise<vo
  */
 app.post('/api/admiral/launch', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { brief, confirmed, provider, model, apiKey } = req.body as {
-      brief: MissionBrief; confirmed?: boolean; provider?: string; model?: string; apiKey?: string;
+    const { brief, confirmed, provider = 'openrouter', model, apiKey, baseUrl } = req.body as {
+      brief: MissionBrief; confirmed?: boolean; provider?: string; model?: string; apiKey?: string; baseUrl?: string;
     };
     if (!brief || !brief.objective || !brief.target) {
       res.status(400).json({ error: 'brief with objective + target required' });
@@ -7432,7 +7655,7 @@ app.post('/api/admiral/launch', async (req: Request, res: Response): Promise<voi
 
     let generalConfig;
     try {
-      generalConfig = resolveGeneralLLMConfig(provider, model, apiKey);
+      generalConfig = resolveGeneralLLMConfig(provider, model, apiKey, baseUrl);
     } catch (error: any) {
       res.status(400).json({ error: error.message || 'API key required' });
       return;
@@ -7598,7 +7821,14 @@ type ConnectedLocalAgent = {
 };
 const connectedLocalAgents = new Map<string, ConnectedLocalAgent>();
 const LOCAL_AGENT_HEALTH_TTL_MS = 30_000;
-const LOCAL_AGENT_HEALTH_TIMEOUT_MS = 45_000;
+// A 15s liveness probe SIGKILLs a slow-but-alive local reasoning agent (which spends tens of
+// seconds thinking even on the trivial PONG probe), making requireLiveLocalAgent falsely reject
+// a healthy backend. Default to 90s and let the operator raise it via env for very slow models.
+// Bounded (not the 600s dispatch timeout) so a genuinely hung agent can't stall a mission for minutes.
+const LOCAL_AGENT_HEALTH_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.T3MP3ST_LOCAL_AGENT_HEALTH_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 90_000;
+})();
 
 async function refreshConnectedLocalAgentHealth(force = false): Promise<void> {
   const now = Date.now();
@@ -7749,7 +7979,25 @@ async function startServer() {
   console.log('');
 
   await loadPersistedState();
+
+  // Install the outbound SOCKS5 proxy (if TEMPEST_PROXY_URL / saved settings define one)
+  // BEFORE anything makes outbound calls, so all test/attack fetch() egress is covered.
+  const proxyStatus = initProxyFromConfig();
+  if (proxyStatus.enabled) {
+    console.log(`[T3MP3ST] Outbound proxy ENABLED → ${proxyStatus.url} (loopback bypassed)`);
+  } else if (proxyStatus.error) {
+    console.warn(`[T3MP3ST] Outbound proxy misconfigured, egress is DIRECT: ${proxyStatus.error}`);
+  } else {
+    console.log('[T3MP3ST] Outbound proxy disabled — egress from local IP.');
+  }
+
   llm = await initLLM();
+
+  // Load multi-language grammars once, before any white-box ingest request.
+  // initGrammars is internally fail-open (never rejects): on failure the
+  // registry stays empty, Python still ingests via the regex parser, and other
+  // languages yield no blocks (it logs a warning).
+  await initGrammars();
 
   // Graceful-shutdown flush: on SIGTERM/SIGINT (Ctrl-C, docker stop, systemctl restart) write
   // any pending debounced snapshot before exiting, so the persistState debounce can't lose the

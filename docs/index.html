@@ -345,7 +345,31 @@
 
         .header-title { font-size: 18px; font-weight: 600; }
 
-        .header-actions { display: flex; gap: 10px; }
+        .header-actions { display: flex; gap: 10px; align-items: center; }
+
+        /* Egress IP badge — shows the IP the world sees for test traffic. Colour encodes
+           state: green = proxied (safe), red = real IP exposed (leak), grey = unknown. */
+        .egress-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 5px 10px; border-radius: 6px; cursor: pointer; user-select: none;
+            font-size: 11px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+            border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04);
+            transition: background .15s, border-color .15s;
+        }
+        .egress-badge:hover { background: rgba(255,255,255,0.08); }
+        .egress-badge .egress-dot { width: 8px; height: 8px; border-radius: 50%; background: #888; flex: 0 0 auto; }
+        .egress-badge .egress-label { color: #9aa; font-weight: 600; letter-spacing: .5px; }
+        .egress-badge .egress-ip { color: #cfd; font-weight: 700; }
+        .egress-loading .egress-dot { background: #888; animation: egressPulse 1s ease-in-out infinite; }
+        .egress-proxied { border-color: rgba(0,255,136,0.4); background: rgba(0,255,136,0.08); }
+        .egress-proxied .egress-dot { background: #00ff88; box-shadow: 0 0 6px rgba(0,255,136,0.7); }
+        .egress-proxied .egress-ip { color: #7CFFC4; }
+        .egress-leak { border-color: rgba(255,64,64,0.55); background: rgba(255,64,64,0.12); }
+        .egress-leak .egress-dot { background: #ff4040; box-shadow: 0 0 8px rgba(255,64,64,0.8); animation: egressPulse .8s ease-in-out infinite; }
+        .egress-leak .egress-label, .egress-leak .egress-ip { color: #ff8080; }
+        .egress-error { border-color: rgba(255,176,32,0.4); }
+        .egress-error .egress-dot { background: #ffb020; }
+        @keyframes egressPulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
         .btn {
             padding: 8px 16px;
@@ -868,7 +892,7 @@
         .modal-body { padding: 16px; }
 
         /* Toast */
-        .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 2000; }
+        .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 2000; transition: bottom 0.2s ease; }
 
         .toast {
             background: var(--bg-secondary);
@@ -892,6 +916,72 @@
         .toast.success { border-left: 3px solid var(--accent); }
         .toast.error { border-left: 3px solid var(--danger); }
         .toast.warning { border-left: 3px solid var(--warning); }
+
+        /* LLM Call Queue popup — live feed of queued/running LLM calls, bottom-right, above toasts */
+        .llm-queue-popup {
+            position: fixed; bottom: 20px; right: 20px; z-index: 2100;
+            width: 960px; max-width: calc(100vw - 40px);
+            background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-size: 12px; overflow: hidden;
+            animation: slideIn 0.25s ease;
+        }
+        .llm-queue-popup.minimized .llm-queue-body { display: none; }
+        .llm-queue-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 10px; cursor: pointer; user-select: none;
+            background: var(--bg-tertiary); border-bottom: 1px solid var(--border-color);
+        }
+        .llm-queue-popup.minimized .llm-queue-header { border-bottom: none; }
+        .llm-queue-title { color: var(--accent); font-weight: 700; font-size: 11px; letter-spacing: 0.3px; }
+        .llm-queue-title span { color: var(--text-muted); font-weight: 400; }
+        .llm-queue-min-btn {
+            background: none; border: 1px solid var(--border-color); color: var(--text-secondary);
+            width: 20px; height: 18px; line-height: 14px; border-radius: 3px; cursor: pointer; font-size: 12px;
+        }
+        .llm-queue-min-btn:hover { color: var(--accent); border-color: var(--accent); }
+        .llm-queue-body { max-height: 260px; overflow-y: auto; }
+        .llm-queue-item {
+            display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .llm-queue-item:last-child { border-bottom: none; }
+        .llm-queue-item-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+        .llm-queue-item.running .llm-queue-item-dot { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); animation: llmQueuePulse 1.2s infinite; }
+        .llm-queue-item.queued .llm-queue-item-dot { background: var(--text-muted); }
+        .llm-queue-item.done .llm-queue-item-dot { background: var(--accent); }
+        .llm-queue-item.error .llm-queue-item-dot { background: var(--danger); }
+        .llm-queue-item.cancelled .llm-queue-item-dot { background: var(--warning); }
+        @keyframes llmQueuePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .llm-queue-item-info { flex: 1; min-width: 0; }
+        .llm-queue-item-label { color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .llm-queue-item-status { color: var(--text-muted); font-size: 10px; }
+        .llm-queue-item-stop {
+            background: none; border: 1px solid var(--border-color); color: var(--text-muted);
+            width: 20px; height: 20px; border-radius: 3px; cursor: pointer; font-size: 11px; flex-shrink: 0; line-height: 1;
+        }
+        .llm-queue-item-stop:hover { color: var(--danger); border-color: var(--danger); }
+        /* Live log panel inside the queue popup — a real-time feed of what the harness
+           is launching (benchmarks, API calls, fallbacks, pass/fail). */
+        .llm-queue-header-btns { display: flex; gap: 4px; align-items: center; }
+        .llm-queue-log {
+            max-height: 190px; overflow-y: auto; border-top: 1px solid var(--border-color);
+            background: var(--bg-primary); font-size: 10px; padding: 3px 0; display: none;
+        }
+        .llm-queue-log.show { display: block; }
+        .llm-queue-popup.minimized .llm-queue-log { display: none !important; }
+        .llm-queue-log-entry {
+            display: flex; gap: 6px; padding: 2px 10px; line-height: 1.35;
+            border-left: 2px solid transparent; word-break: break-word;
+        }
+        .llm-queue-log-time { color: var(--text-muted); flex-shrink: 0; font-size: 9px; }
+        .llm-queue-log-src { color: var(--text-secondary); font-weight: 700; flex-shrink: 0; font-size: 9px; letter-spacing: 0.3px; }
+        .llm-queue-log-msg { color: var(--text-primary); flex: 1; min-width: 0; }
+        .llm-queue-log-entry.info { border-left-color: var(--cyan, #0088ff); }
+        .llm-queue-log-entry.success { border-left-color: var(--accent, #00ff88); }
+        .llm-queue-log-entry.warning { border-left-color: var(--warning, #ffaa00); }
+        .llm-queue-log-entry.error, .llm-queue-log-entry.danger { border-left-color: var(--danger, #ff4444); }
+        .llm-queue-log-entry.error .llm-queue-log-msg, .llm-queue-log-entry.danger .llm-queue-log-msg { color: var(--danger, #ff4444); }
+        .llm-queue-log-empty { color: var(--text-muted); padding: 8px 10px; font-style: italic; font-size: 10px; }
 
         /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -939,6 +1029,7 @@
         .bench-result.pass { color: var(--accent); }
         .bench-result.fail { color: var(--danger); }
         .bench-result.partial { color: var(--warning); }
+        .bench-result.cancelled { color: var(--warning); opacity: 0.8; }
 
         .perf-bar {
             width: 100%;
@@ -3457,6 +3548,11 @@
                 <button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
                 <h1 class="header-title" id="pageTitle">War Room</h1>
                 <div class="header-actions">
+                    <span id="egressIpBadge" class="egress-badge egress-loading" onclick="refreshEgressIp(true)" title="Egress IP for test traffic — click to re-check">
+                        <span class="egress-dot"></span>
+                        <span class="egress-label">IP:</span>
+                        <span class="egress-ip" id="egressIpValue">…</span>
+                    </span>
                     <button class="btn btn-secondary" onclick="if(window.t3mpTour)t3mpTour.start()" title="Take the guided tour" aria-label="Guided tour" style="font-weight:700;">?</button>
                     <button class="btn btn-secondary" onclick="openQuickActions()">⌘ Actions</button>
                     <button class="btn btn-primary" onclick="navigateTo('warroom')">⚔️ War Room</button>
@@ -5515,6 +5611,49 @@
                 <!-- Settings -->
                 <div class="page" id="page-settings">
                     <div class="settings-section">
+                        <h2 class="settings-title">🎛️ Universal API Config</h2>
+                        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">Configure your LLM providers in one place — provider, key, base URL, model, and context cap — shared with the individual provider sections below (fully backward-compatible).</p>
+                        <div class="card">
+                            <div class="form-group">
+                                <label style="display:block; font-size:12px; color:#9fb0bd; margin-bottom:6px; font-weight:600;">API Provider</label>
+                                <select class="form-input" id="uacProvider" onchange="uacLoadProvider()">
+                                    <option value="openrouter">OpenRouter · OpenAI-compatible</option>
+                                    <option value="venice">Venice · OpenAI-compatible</option>
+                                    <option value="openai">OpenAI · OpenAI-compatible</option>
+                                    <option value="anthropic">Claude · Anthropic Messages API</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:block; font-size:12px; color:#9fb0bd; margin-bottom:6px; font-weight:600;">Base URL <span style="color:#6b7a85; font-weight:400;">— optional, blank uses the provider default</span></label>
+                                <input type="text" class="form-input" id="uacBaseUrl" placeholder="https://openrouter.ai/api/v1">
+                            </div>
+                            <div class="form-group">
+                                <label style="display:block; font-size:12px; color:#9fb0bd; margin-bottom:6px; font-weight:600;">API Key</label>
+                                <div class="api-key-input">
+                                    <input type="password" class="form-input" id="uacApiKey" placeholder="sk-...">
+                                    <button class="api-key-toggle" onclick="toggleApiKey('uacApiKey')">Show</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:block; font-size:12px; color:#9fb0bd; margin-bottom:6px; font-weight:600;">Model</label>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <select class="form-input" id="uacModel" style="flex:1;">
+                                        <option value="">— none selected —</option>
+                                    </select>
+                                    <button class="btn btn-secondary btn-sm" id="uacFetchBtn" onclick="uacFetchModels()">Fetch models</button>
+                                </div>
+                                <div class="form-hint" id="uacModelHint" style="margin-top:6px;"></div>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:block; font-size:12px; color:#9fb0bd; margin-bottom:6px; font-weight:600;">Max Context Tokens <span style="color:#6b7a85; font-weight:400;">— optional</span></label>
+                                <input type="number" class="form-input" id="uacMaxTokens" placeholder="e.g. 200000" min="0" step="1000">
+                            </div>
+                            <div style="font-size:10.5px; color:#8a99a5; margin:2px 0 12px; line-height:1.5;">In-browser mission routing currently uses <b>OpenRouter</b> or <b>Venice</b> (or a connected local agent). Keys for other providers, custom base URLs, and the context cap are stored and used for model discovery and server-side / agent flows.</div>
+                            <button class="btn btn-primary btn-sm" onclick="uacSave()">Save config</button>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
                         <h2 class="settings-title">🔑 API Keys</h2>
 
                         <div class="card">
@@ -5563,6 +5702,78 @@
                             </div>
                             <div style="font-size: 10px; color: #888; margin-bottom: 8px;">Stored, but direct-LLM currently routes via <b>OpenRouter</b> or a connected agent — not wired to this key yet.</div>
                             <button class="btn btn-primary btn-sm" onclick="saveApiKey('openai')">Save</button>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h2 class="settings-title">🖥️ Local Model (llama.cpp / Ollama / OpenAI-compatible)</h2>
+                        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
+                            Point the War Room at a model running on your own host — <b style="color:#bcd;">no cloud, no OpenRouter</b>.
+                            Requires <code>npm run server</code>. When enabled, BOTH server-dispatched missions/General AND the
+                            browser "AI" features route through your local model.
+                        </p>
+                        <div class="card">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:14px; font-size:14px; font-weight:700; color:#2fd6ff;">
+                                <input type="checkbox" id="useLocalToggle" style="accent-color:#2fd6ff; width:16px; height:16px;">
+                                Use the local model for all LLM calls
+                            </label>
+                            <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:10px;">
+                                <div class="form-group">
+                                    <label style="font-size:12px; color:var(--text-muted);">Host / IP</label>
+                                    <input type="text" class="form-input" id="localHost" placeholder="127.0.0.1">
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-size:12px; color:var(--text-muted);">Port</label>
+                                    <input type="text" class="form-input" id="localPort" placeholder="8080">
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-size:12px; color:var(--text-muted);">API path</label>
+                                    <input type="text" class="form-input" id="localPath" placeholder="/v1">
+                                </div>
+                            </div>
+                            <div class="form-hint" style="margin:-6px 0 12px;">
+                                llama.cpp (OpenAI-compatible server): path <code>/v1</code> · Ollama native: path <code>/api</code> (port <code>11434</code>) · LM Studio: <code>/v1</code> (port <code>1234</code>)
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size:12px; color:var(--text-muted);">Model tag</label>
+                                <input type="text" class="form-input" id="localModel" placeholder="e.g. qwen2.5-coder / llama3 / the loaded gguf name">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size:12px; color:var(--text-muted);">API key (optional — llama.cpp <code>--api-key</code>)</label>
+                                <div class="api-key-input">
+                                    <input type="password" class="form-input" id="localApiKey" placeholder="leave empty if the server needs none">
+                                    <button class="api-key-toggle" onclick="toggleApiKey('localApiKey')">Show</button>
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                                <button class="btn btn-primary btn-sm" onclick="saveLocalConfig()">Save</button>
+                                <button class="btn btn-sm" onclick="testLocalConfig()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(0,200,255,0.3);color:#bcd;">Test connection</button>
+                            </div>
+                            <div id="localTestResult" style="font-size:12px; margin-top:10px; color:var(--text-muted);"></div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h2 class="settings-title">🧅 Egress Proxy (SOCKS5)</h2>
+                        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
+                            Route all probe/attack <code>fetch()</code> traffic through a <b style="color:#bcd;">SOCKS5 proxy</b> so tests
+                            don't leave from your own IP (Tor, an SSH <code>-D</code> tunnel, a VPS, etc.). Loopback (the local model &amp; this
+                            server) is always bypassed. Requires <code>npm run server</code>; also settable via <code>TEMPEST_PROXY_URL</code>.
+                        </p>
+                        <div class="card">
+                            <div class="form-group">
+                                <label style="font-size:12px; color:var(--text-muted);">SOCKS5 URL — <code>socks5://[user:pass@]host:port</code></label>
+                                <input type="text" class="form-input" id="proxyUrl" placeholder="socks5://127.0.0.1:9050  (empty = direct / your own IP)">
+                            </div>
+                            <div class="form-hint" style="margin:-6px 0 12px;">
+                                Tor: <code>socks5://127.0.0.1:9050</code> · SSH tunnel: <code>ssh -D 1080 host</code> → <code>socks5://127.0.0.1:1080</code>. Use <code>socks5h://</code> to resolve DNS at the proxy.
+                            </div>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                                <button class="btn btn-primary btn-sm" onclick="saveProxyConfig()">Save &amp; apply</button>
+                                <button class="btn btn-sm" onclick="saveProxyConfig('')" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.2);color:#bcd;">Disable (direct)</button>
+                                <button class="btn btn-sm" onclick="checkProxyIp()" style="background:rgba(255,255,255,0.05);border:1px solid rgba(0,200,255,0.3);color:#bcd;">Check IP now</button>
+                            </div>
+                            <div id="proxyTestResult" style="font-size:12px; margin-top:10px; color:var(--text-muted);"></div>
                         </div>
                     </div>
 
@@ -5845,6 +6056,20 @@ tempest.operators.<span class="function">spawn</span>(<span class="string">'scan
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
+    <!-- LLM Call Queue — live Q&A feed for sequential (single-slot) LLM calls, e.g. local models -->
+    <div class="llm-queue-popup" id="llmQueuePopup" style="display:none;">
+        <div class="llm-queue-header" onclick="toggleLLMQueueMinimize()">
+            <span class="llm-queue-title">⚡ LLM Queue <span id="llmQueueCount">0</span></span>
+            <div class="llm-queue-header-btns">
+                <button class="llm-queue-min-btn" onclick="event.stopPropagation(); toggleLLMQueueLog()" title="Mostra/nascondi log live">▤</button>
+                <button class="llm-queue-min-btn" onclick="event.stopPropagation(); toggleLLMQueueMinimize()" title="Minimizza">_</button>
+                <button class="llm-queue-min-btn" onclick="event.stopPropagation(); closeLLMQueuePopup()" title="Chiudi">✕</button>
+            </div>
+        </div>
+        <div class="llm-queue-body" id="llmQueueBody"></div>
+        <div class="llm-queue-log show" id="llmQueueLog"><div class="llm-queue-log-empty">In attesa di attività…</div></div>
+    </div>
+
     <script>
         // State
         const state = {
@@ -5853,7 +6078,7 @@ tempest.operators.<span class="function">spawn</span>(<span class="string">'scan
             findings: [],
             credentials: [],
             activities: [],
-            settings: { openrouterKey: '', anthropicKey: '', openaiKey: '', selectedModel: 'anthropic/claude-opus-4.6', fallbackModel: 'nousresearch/hermes-3-llama-3.1-405b' },
+            settings: { openrouterKey: '', anthropicKey: '', openaiKey: '', selectedModel: 'anthropic/claude-opus-4.6', fallbackModel: 'nousresearch/hermes-3-llama-3.1-405b', localHost: '127.0.0.1', localPort: '8080', localPath: '/v1', localModel: '', localApiKey: '', useLocal: false },
             connected: false
         };
 
@@ -6334,6 +6559,11 @@ tempest.operators.<span class="function">spawn</span>(<span class="string">'scan
              * Start a mission via the backend
              */
             async startMission(missionName, targets, operators, apiKey, provider, model, approvalId) {
+                // For a local provider, carry the operator's llama.cpp / Ollama base URL and
+                // (optional) key from Settings so the server dispatches the mission to it.
+                const localExtras = (provider === 'local' && typeof buildLocalBaseUrl === 'function')
+                    ? { baseUrl: buildLocalBaseUrl(), apiKey: state.settings?.localApiKey || undefined }
+                    : {};
                 const result = await T3MP3ST_API.post('/api/mission/start', {
                     name: missionName,
                     targets: targets.map(t => ({ host: t.host || t })),
@@ -6341,6 +6571,7 @@ tempest.operators.<span class="function">spawn</span>(<span class="string">'scan
                     apiKey,
                     provider,
                     model,
+                    ...localExtras, // local: overrides apiKey with the Settings key + adds baseUrl
                     ...(approvalId ? { approvalId } : {}),
                 });
                 if (result.success) {
@@ -6994,9 +7225,9 @@ Correlating findings across agents, identifying patterns, producing actionable i
             { id: 'z-ai/glm-4.7', name: 'GLM 4.7', provider: 'Z.AI' },
             // Meta
             { id: 'meta-llama/llama-3.3-70b', name: 'Llama 3.3 70B', provider: 'Meta' },
-            // DeepSeek (Dec 2025)
-            { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', provider: 'DeepSeek' },
-            { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', provider: 'DeepSeek' },
+            // DeepSeek (Jul 2026 — V4)
+            { id: 'deepseek/deepseek-v4-pro', name: 'DeepSeek V4 Pro', provider: 'DeepSeek' },
+            { id: 'deepseek/deepseek-v4-flash', name: 'DeepSeek V4 Flash', provider: 'DeepSeek' },
             // Mistral
             { id: 'mistralai/mistral-large', name: 'Mistral Large', provider: 'Mistral' },
             // Local
@@ -7071,6 +7302,19 @@ Correlating findings across agents, identifying patterns, producing actionable i
             if (veKey) veKey.value = state.settings.veniceKey || '';
             if (anKey) anKey.value = state.settings.anthropicKey || '';
             if (oaKey) oaKey.value = state.settings.openaiKey || '';
+            // Local model (llama.cpp / Ollama / OpenAI-compatible)
+            const setV = (id, v) => { const n = document.getElementById(id); if (n) n.value = v; };
+            setV('localHost', state.settings.localHost || '127.0.0.1');
+            setV('localPort', state.settings.localPort || '8080');
+            setV('localPath', state.settings.localPath || '/v1');
+            setV('localModel', state.settings.localModel || '');
+            setV('localApiKey', state.settings.localApiKey || '');
+            const ult = document.getElementById('useLocalToggle');
+            if (ult) ult.checked = !!state.settings.useLocal;
+            // Egress SOCKS5 proxy — the field holds the full URL (with creds) the operator
+            // typed; the server only ever returns a redacted form, so we repopulate from the
+            // local cache. If the server has one set via TEMPEST_PROXY_URL, the badge shows it.
+            setV('proxyUrl', localStorage.getItem('t3mp3st_proxy_url') || '');
         }
 
         function saveState() {
@@ -7295,6 +7539,13 @@ Correlating findings across agents, identifying patterns, producing actionable i
             await T3MP3ST_API.post('/api/approvals/' + id + '/approve', {});
             await window.refreshReceiptsPage();
             if (window.toast) toast('Receipt approved: ' + id, 'success');
+            if (window.__t3mpPendingApprovalReceiptIds?.includes(id) && typeof window.__t3mpPendingApprovalRetry === 'function') {
+                const retry = window.__t3mpPendingApprovalRetry;
+                window.__t3mpPendingApprovalRetry = null;
+                window.__t3mpPendingApprovalReceiptIds = [];
+                retry();
+                return;
+            }
             if (receipt?.action === 'autonomous_execution' && window.__t3mpAdmiralPendingRetry && typeof window.retryPendingAdmiralLaunch === 'function') {
                 window.retryPendingAdmiralLaunch();
             }
@@ -7311,6 +7562,13 @@ Correlating findings across agents, identifying patterns, producing actionable i
             await Promise.all(pending.map(function(a){ return T3MP3ST_API.post('/api/approvals/' + a.id + '/approve', {}); }));
             await window.refreshReceiptsPage();
             if (window.toast) toast('Approved ' + pending.length + ' pending receipt(s)', pending.length ? 'success' : 'info');
+            if (pending.some(function(a){ return window.__t3mpPendingApprovalReceiptIds?.includes(a.id); }) && typeof window.__t3mpPendingApprovalRetry === 'function') {
+                const retry = window.__t3mpPendingApprovalRetry;
+                window.__t3mpPendingApprovalRetry = null;
+                window.__t3mpPendingApprovalReceiptIds = [];
+                retry();
+                return;
+            }
             if (pending.some(function(a){ return a.action === 'autonomous_execution'; }) && window.__t3mpAdmiralPendingRetry && typeof window.retryPendingAdmiralLaunch === 'function') {
                 window.retryPendingAdmiralLaunch();
             }
@@ -7386,6 +7644,7 @@ Correlating findings across agents, identifying patterns, producing actionable i
             if (page === 'operators' && typeof window.loadOperativesRoster === 'function') setTimeout(window.loadOperativesRoster, 80);
             if (page === 'evidence' && typeof window.hydrateFindings === 'function') setTimeout(window.hydrateFindings, 60);
             if (page === 'selfimprove' && typeof window.renderSelfImprove === 'function') setTimeout(window.renderSelfImprove, 60);
+            if (page === 'settings' && typeof window.uacInit === 'function') setTimeout(window.uacInit, 40);
         }
 
         document.querySelectorAll('.nav-item').forEach(i => i.addEventListener('click', () => navigateTo(i.dataset.page)));
@@ -8476,6 +8735,19 @@ o.id === 'coordinator' ? `1. MISSION_STATUS: Progress assessment
             return div.innerHTML;
         }
 
+        // escapeHtml (the textContent/innerHTML trick) only escapes & < > — it does NOT escape quotes,
+        // because that's only applied when serializing an actual attribute, not a text node. Any string
+        // interpolated into an HTML attribute value (title="...", etc.) must use this instead, or a
+        // literal " in the source string breaks out of the attribute (e.g. remote-sourced benchmark names).
+        function escapeAttr(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
 
 
         function filterArsenalByCat(cat) {
@@ -8773,6 +9045,123 @@ o.id === 'coordinator' ? `1. MISSION_STATUS: Progress assessment
             toast(`${provider} key saved`, 'success');
         }
 
+        // ── Local model (llama.cpp / Ollama / OpenAI-compatible) ───────────────
+        // Compose host + port + path into the base URL the LocalAdapter expects.
+        // A base URL ending in /vN (e.g. llama.cpp's /v1) routes over the OpenAI wire;
+        // /api routes over Ollama's native wire.
+        function buildLocalBaseUrl() {
+            const host = (state.settings.localHost || '127.0.0.1').trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+            const port = (state.settings.localPort || '').trim();
+            let path = (state.settings.localPath || '/v1').trim();
+            if (!path.startsWith('/')) path = '/' + path;
+            path = path.replace(/\/$/, '');
+            return `http://${host}${port ? ':' + port : ''}${path}`;
+        }
+
+        function readLocalInputsIntoState() {
+            state.settings.localHost = document.getElementById('localHost').value.trim() || '127.0.0.1';
+            state.settings.localPort = document.getElementById('localPort').value.trim();
+            state.settings.localPath = document.getElementById('localPath').value.trim() || '/v1';
+            state.settings.localModel = document.getElementById('localModel').value.trim();
+            state.settings.localApiKey = document.getElementById('localApiKey').value.trim();
+            state.settings.useLocal = document.getElementById('useLocalToggle').checked;
+        }
+
+        function saveLocalConfig() {
+            readLocalInputsIntoState();
+            saveState();
+            const url = buildLocalBaseUrl();
+            if (typeof updatePreflightChecklist === 'function') updatePreflightChecklist();
+            addActivity('success', `Local model ${state.settings.useLocal ? 'ENABLED' : 'config saved'} (${state.settings.localModel || 'default'})`, 'Settings');
+            toast(`Local model ${state.settings.useLocal ? 'enabled' : 'saved'} → ${url}`, 'success');
+        }
+
+        // ── Egress SOCKS5 proxy (Settings → Egress Proxy) ──
+        // Persists on the server (drives the global fetch dispatcher) AND caches locally
+        // so the field repopulates. Pass '' to disable. `override` lets the "Disable" button
+        // clear it regardless of the field's current text.
+        async function saveProxyConfig(override) {
+            const el = document.getElementById('proxyTestResult');
+            const input = document.getElementById('proxyUrl');
+            const url = (typeof override === 'string') ? override : (input ? input.value.trim() : '');
+            if (el) { el.style.color = 'var(--text-muted)'; el.textContent = '⏳ Applying proxy …'; }
+            try {
+                const r = await fetch(`${getApiBase()}/api/net/proxy`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+                if (input && typeof override === 'string') input.value = override;
+                localStorage.setItem('t3mp3st_proxy_url', url);
+                if (el) {
+                    el.style.color = d.enabled ? '#7CFFC4' : 'var(--text-muted)';
+                    el.textContent = d.enabled ? `✅ Proxy active → ${d.url} (loopback bypassed). Verifying egress IP…` : '✅ Proxy disabled — egress is direct (your own IP).';
+                }
+                toast(d.enabled ? `Egress proxy enabled → ${d.url}` : 'Egress proxy disabled', d.enabled ? 'success' : 'info');
+                addActivity('success', d.enabled ? `Egress proxy ENABLED (${d.url})` : 'Egress proxy disabled', 'Settings');
+                // Re-check the badge/IP right away (force = skip the server cache).
+                setTimeout(() => { refreshEgressIp(true); checkProxyIp(); }, 400);
+            } catch (e) {
+                if (el) { el.style.color = '#ff8080'; el.textContent = '❌ ' + (e.message || e); }
+                toast('Proxy config failed: ' + (e.message || e), 'error');
+            }
+        }
+
+        async function checkProxyIp() {
+            const el = document.getElementById('proxyTestResult');
+            if (el) { el.style.color = 'var(--text-muted)'; el.textContent = '⏳ Checking egress IP via ifconfig.co …'; }
+            try {
+                const r = await fetch(`${getApiBase()}/api/net/ip?force=1`);
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+                const exit = (d.exit && d.exit.ip) || '—';
+                const real = (d.direct && d.direct.ip) || '—';
+                const cc = (d.exit && d.exit.country) ? ` (${d.exit.country})` : '';
+                if (el) {
+                    if (d.leak) {
+                        el.style.color = '#ff8080';
+                        el.innerHTML = d.proxyEnabled
+                            ? `⚠ <b>LEAK</b>: exit IP <b>${exit}</b> equals your real IP — the proxy is not changing egress. Traffic is NOT anonymized.`
+                            : `⚠ <b>No proxy</b>: tests leave from your real IP <b>${exit}</b>. Set a SOCKS5 URL above to anonymize.`;
+                    } else {
+                        el.style.color = '#7CFFC4';
+                        el.innerHTML = `✅ Egress IP <b>${exit}</b>${cc} — your real IP <b>${real}</b> is hidden. <span style="color:var(--text-muted);">via ${(d.proxy && d.proxy.url) || 'SOCKS5'}</span>`;
+                    }
+                }
+                refreshEgressIp(false);
+            } catch (e) {
+                if (el) { el.style.color = '#ff8080'; el.textContent = '❌ IP check failed: ' + (e.message || e) + ' (is the backend running?)'; }
+            }
+        }
+
+        async function testLocalConfig() {
+            readLocalInputsIntoState();
+            const el = document.getElementById('localTestResult');
+            if (el) { el.style.color = 'var(--text-muted)'; el.textContent = '⏳ Testing ' + buildLocalBaseUrl() + ' …'; }
+            try {
+                const r = await fetch(llmProxyUrl(), {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: 'Reply with the single word READY',
+                        model: state.settings.localModel || undefined,
+                        baseUrl: buildLocalBaseUrl(),
+                        apiKey: state.settings.localApiKey || undefined,
+                        // This probe always targets the local backend, so use a local-scaled timeout:
+                        // a reasoning model emits a <think> block even for "READY" and a cold model
+                        // load + prefill can exceed 30s, giving a false ❌ on a healthy backend.
+                        // A slightly larger maxTokens lets the READY token land after a short think.
+                        maxTokens: 64, timeout: 90000
+                    })
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+                if (el) { el.style.color = '#3ad29f'; el.textContent = '✅ OK — response: ' + JSON.stringify((d.content || '').slice(0, 80)); }
+            } catch (e) {
+                if (el) { el.style.color = '#ff6b6b'; el.textContent = '❌ ' + e.message; }
+            }
+        }
+
         function renderModels() {
             const container = document.getElementById('modelSelector');
             if (!container) {
@@ -8815,6 +9204,110 @@ o.id === 'coordinator' ? `1. MISSION_STATUS: Progress assessment
             const input = document.getElementById('fallbackModelInput');
             if (input) input.value = state.settings?.fallbackModel || 'nousresearch/hermes-3-llama-3.1-405b';
         }
+
+        // ── Universal API Config panel (#90) ────────────────────────────────────────────────
+        // One place to set the active provider's key / base URL / model / max-context. Reads and
+        // writes the SAME state.settings keys the individual provider sections use (${p}Key,
+        // selectedModel), so it is fully backward-compatible — nothing migrates, nothing is lost.
+        const UAC_DEFAULT_BASE = {
+            openrouter: 'https://openrouter.ai/api/v1',
+            venice: 'https://api.venice.ai/api/v1',
+            openai: 'https://api.openai.com/v1',
+            anthropic: 'https://api.anthropic.com',
+        };
+        function uacProvider() { return document.getElementById('uacProvider')?.value || 'openrouter'; }
+        // Model ids come from a provider's /models response (and the user can point Base URL at ANY
+        // endpoint), so they are untrusted. Build <option>s with the DOM API — value/textContent are
+        // injection-proof — never string-interpolated into innerHTML.
+        function uacSetModelOptions(selEl, ids, current) {
+            if (!selEl) return;
+            selEl.replaceChildren();
+            const none = document.createElement('option');
+            none.value = ''; none.textContent = '— none selected —';
+            selEl.appendChild(none);
+            for (const id of ids) {
+                const o = document.createElement('option');
+                o.value = id; o.textContent = id;
+                if (id && id === current) o.selected = true;
+                selEl.appendChild(o);
+            }
+        }
+        function uacLoadProvider() {
+            const p = uacProvider();
+            const s = state.settings || {};
+            const keyEl = document.getElementById('uacApiKey');
+            const baseEl = document.getElementById('uacBaseUrl');
+            if (keyEl) keyEl.value = s[p + 'Key'] || '';
+            if (baseEl) { baseEl.value = s[p + 'BaseUrl'] || ''; baseEl.placeholder = UAC_DEFAULT_BASE[p] || ''; }
+            const modelEl = document.getElementById('uacModel');
+            if (modelEl) {
+                const sel = s.selectedModel || '';
+                uacSetModelOptions(modelEl, sel ? [sel] : [], sel);
+            }
+            const hint = document.getElementById('uacModelHint'); if (hint) hint.textContent = '';
+        }
+        function uacInit() {
+            const sel = document.getElementById('uacProvider');
+            if (sel && state.settings && state.settings.activeProvider) sel.value = state.settings.activeProvider;
+            const mt = document.getElementById('uacMaxTokens');
+            if (mt) mt.value = (state.settings && state.settings.maxContextTokens) || '';
+            uacLoadProvider();
+        }
+        function uacSave() {
+            const p = uacProvider();
+            const s = state.settings || (state.settings = {});
+            s.activeProvider = p;
+            // Only write the key when the field is non-empty — mirrors saveApiKey's guard so a cleared
+            // field (or a select-all-delete) can't silently wipe a working stored key.
+            const keyVal = document.getElementById('uacApiKey')?.value?.trim() || '';
+            if (keyVal) s[p + 'Key'] = keyVal;
+            const base = document.getElementById('uacBaseUrl')?.value?.trim() || '';
+            if (base) s[p + 'BaseUrl'] = base; else delete s[p + 'BaseUrl'];
+            const model = document.getElementById('uacModel')?.value || '';
+            if (model) s.selectedModel = model;
+            const mtRaw = document.getElementById('uacMaxTokens')?.value;
+            const mt = mtRaw ? parseInt(mtRaw, 10) : 0;
+            if (Number.isFinite(mt) && mt > 0) s.maxContextTokens = mt; else delete s.maxContextTokens;
+            saveState();
+            // keep the individual-section input in sync so both views agree
+            const legacy = document.getElementById(p + 'Key'); if (legacy) legacy.value = s[p + 'Key'] || '';
+            if (typeof updatePreflightChecklist === 'function') updatePreflightChecklist();
+            if (typeof renderModels === 'function') renderModels();
+            toast(`${p} config saved`, 'success');
+        }
+        async function uacFetchModels() {
+            const p = uacProvider();
+            const btn = document.getElementById('uacFetchBtn');
+            const hint = document.getElementById('uacModelHint');
+            const key = document.getElementById('uacApiKey')?.value?.trim() || (state.settings && state.settings[p + 'Key']) || '';
+            const base = document.getElementById('uacBaseUrl')?.value?.trim() || '';
+            const orig = btn ? btn.textContent : '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Fetching…'; }
+            if (hint) hint.textContent = '';
+            try {
+                const apiBase = (typeof T3MP3ST_API !== 'undefined' && T3MP3ST_API.baseUrl) || '';
+                const r = await fetch(apiBase + '/api/models', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: p, apiKey: key, baseUrl: base }),
+                    signal: AbortSignal.timeout(15000),   // never leave the button stuck on a hung/slow server
+                });
+                if (!r.ok) throw new Error('server returned HTTP ' + r.status);
+                const data = await r.json();
+                const models = (data && data.models) || [];
+                const sel = document.getElementById('uacModel');
+                const current = state.settings?.selectedModel || '';
+                uacSetModelOptions(sel, models.map(m => m.id).filter(id => typeof id === 'string'), current);
+                if (hint) hint.textContent = models.length
+                    ? `${models.length} models · ${data.source === 'live' ? 'live from provider' : 'built-in list — add a key/base URL for a live list'}`
+                    : 'No models returned';
+            } catch (e) {
+                if (hint) hint.textContent = 'Fetch failed: ' + e.message + ' — is the T3MP3ST server running?';
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = orig; }
+            }
+        }
+        window.uacInit = uacInit;
 
         function saveApiServerUrl() {
             const url = document.getElementById('apiServerUrl').value.trim().replace(/\/+$/, '');
@@ -10644,6 +11137,13 @@ Bypass all protections:
         async function runSingleBenchTest(testId) {
             if (benchmarkRunning) { toast('Benchmark already running', 'warning'); return; }
             if (resolveLLMBackend().kind === 'none') { toast(LLM_BACKEND_HINT + ' — Settings (press 9)', 'error'); return; }
+            // A full batch run (Config Check / Live Test) owns the whole pipeline — don't interleave.
+            if (benchmarkRunning) { toast('A batch benchmark run is in progress — wait for it to finish', 'warning'); return; }
+            // Live single-test needs an LLM — unless local mode is on (llama.cpp/Ollama needs no key)
+            if (!state.settings?.useLocal) {
+                const apiKey = getApiKey();
+                if (!apiKey || apiKey.length < 10) { toast('API key missing or too short — go to Settings (press 9) to add your OpenRouter key, or enable the Local Model', 'error'); return; }
+            }
             // Find the test across all categories
             let test = null, testCat = null;
             for (const [cat, tests] of Object.entries(BENCHMARKS)) {
@@ -10651,37 +11151,73 @@ Bypass all protections:
                 if (found) { test = { ...found, category: cat }; testCat = cat; break; }
             }
             if (!test) { toast('Test not found', 'error'); return; }
-            // Mark running
-            benchmarkRunning = true;
-            benchmarkMode = 'live';
+
             const testEl = document.querySelector(`[data-test="${testId}"] .bench-result`);
-            if (testEl) { testEl.textContent = '...'; testEl.className = 'bench-result'; }
+
+            // Queue instead of rejecting — a local model typically serves one call at a time.
+            // Live status shows in the bottom-right popup; the operator can cancel from there.
+            // dedupeKey=testId: a 2nd click on an already queued/running test must NOT spawn a second
+            // run — that would race two invocations over the same testEl/benchmarkResults slot.
+            const qItem = llmQueuePush(test.name, testId);
+            if (qItem.isDuplicate) { toast(`${test.name} is already queued/running`, 'warning'); return; }
+            if (testEl) { testEl.textContent = '⏳'; testEl.className = 'bench-result'; testEl.title = 'Queued'; }
+            const started = await llmQueueWaitTurn(qItem);
+            if (!started) {
+                if (testEl) { testEl.textContent = '--'; testEl.className = 'bench-result'; testEl.title = ''; }
+                return; // cancelled while still waiting in the queue
+            }
+
+            benchmarkMode = 'live';
+            if (testEl) { testEl.textContent = '...'; testEl.className = 'bench-result'; testEl.title = ''; }
             toast(`Running: ${test.name}...`, 'info');
             try {
                 const startTime = performance.now();
                 const result = test.configCheck
                     ? (test.async ? await test.configCheck() : test.configCheck())
-                    : await runLiveBenchmark(test);
+                    : await runLiveBenchmark(test, qItem);
                 if (test.configCheck) result.score = result.passed ? 100 : 0;
                 const elapsed = Math.round(performance.now() - startTime);
                 benchmarkResults[testCat].tests[testId] = {
                     score: result.score, time: elapsed, passed: result.passed,
+                    error: result.error || false,
                     details: result.details, response: result.response,
                     evaluation: result.evaluation || null,
                     foundKeywords: result.foundKeywords || [],
                     missingRequired: result.missingRequired || []
                 };
                 if (testEl) {
-                    testEl.textContent = result.passed ? `✓ ${result.score}%` : `✗ ${result.score}%`;
-                    testEl.className = `bench-result ${result.passed ? 'pass' : result.score >= 50 ? 'partial' : 'fail'}`;
-                    testEl.title = result.details || '';
+                    if (result.cancelled) {
+                        testEl.textContent = 'CANC';
+                        testEl.className = 'bench-result cancelled';
+                        testEl.title = 'Cancelled by operator';
+                    } else if (result.error) {
+                        // LLM call failed (unreachable model / timeout) — distinct from a wrong answer.
+                        testEl.textContent = 'ERR';
+                        testEl.className = 'bench-result fail';
+                        testEl.title = result.details || 'LLM call failed';
+                    } else {
+                        testEl.textContent = result.passed ? `✓ ${result.score}%` : `✗ ${result.score}%`;
+                        testEl.className = `bench-result ${result.passed ? 'pass' : result.score >= 50 ? 'partial' : 'fail'}`;
+                        testEl.title = result.details || '';
+                    }
                 }
-                toast(`${test.name}: ${result.score}% ${result.passed ? '(PASS)' : '(FAIL)'}`, result.passed ? 'success' : 'warning');
+                if (result.cancelled) {
+                    // llmQueueCancel already toasted "Cancelled: <name>"
+                } else if (result.error) {
+                    toast(`${test.name}: ERROR — ${result.details}`, 'error');
+                } else {
+                    toast(`${test.name}: ${result.score}% ${result.passed ? '(PASS)' : '(FAIL)'}`, result.passed ? 'success' : 'warning');
+                }
+                llmQueueFinish(qItem, result.cancelled ? 'cancelled' : (result.error ? 'error' : 'done'));
             } catch (err) {
-                if (testEl) { testEl.textContent = 'ERR'; testEl.className = 'bench-result fail'; }
-                toast(`${test.name}: ${err.message}`, 'error');
+                const cancelled = qItem.status === 'cancelled';
+                if (testEl) {
+                    testEl.textContent = cancelled ? 'CANC' : 'ERR';
+                    testEl.className = cancelled ? 'bench-result cancelled' : 'bench-result fail';
+                }
+                if (!cancelled) toast(`${test.name}: ${err.message}`, 'error');
+                llmQueueFinish(qItem, cancelled ? 'cancelled' : 'error');
             }
-            benchmarkRunning = false;
         }
 
         // Auto-improve toggle shows/hides iterations input + bench-test click delegation
@@ -10777,6 +11313,212 @@ Bypass all protections:
                 models = options._noFallback ? [primaryModel]
                     : (primaryModel === fallbackModel ? [primaryModel] : [primaryModel, fallbackModel]);
             }
+        // Same-origin proxy the browser "AI" features POST to when local mode is on.
+        // The server (npm run server) serves this page, so /api/llm/chat is same-origin
+        // (no CORS) and reuses LLMBackbone -> LocalAdapter to reach llama.cpp/Ollama.
+        function llmProxyUrl() {
+            const custom = localStorage.getItem('t3mp3st_api_url');
+            return (custom ? custom.replace(/\/$/, '') : '') + '/api/llm/local';
+        }
+
+        // Local CPU/GPU inference is far slower than cloud APIs — a 30s timeout tuned for
+        // OpenRouter cuts off llama.cpp mid-generation. Scale call timeouts up when local mode is on.
+        function llmTimeoutFor(baseMs) {
+            return state.settings?.useLocal ? Math.max(baseMs, 120000) : baseMs;
+        }
+
+        // ═══════════ LLM CALL QUEUE — live bottom-right popup for sequential (single-slot) LLM calls ═══════════
+        // Local backends (llama.cpp/Ollama) typically serve one inference at a time. Rather than reject a
+        // benchmark click while one is running, queue it and show live status; let the operator cancel
+        // any queued or in-flight call (important given how slow big local models can be).
+        const llmQueue = []; // { id, label, status: 'queued'|'running'|'done'|'error'|'cancelled', startedAt, controller }
+        let llmQueueSeq = 0;
+        let llmQueueActiveId = null;
+        let llmQueueMinimized = false;
+        let llmQueueHideTimer = null;
+
+        // dedupeKey (e.g. the benchmark testId) prevents two independent runs of the SAME test from
+        // both being queued — without this, a double-click on a still-'...' cell spawns a second
+        // qItem that stomps the first one's live DOM/result state (confirmed bug from code review).
+        // Returns the existing item if one is already queued/running for that key, and null-safe callers
+        // should check `item.isDuplicate` to decide whether to bail out instead of running again.
+        function llmQueuePush(label, dedupeKey) {
+            if (dedupeKey) {
+                const existing = llmQueue.find(q => q.dedupeKey === dedupeKey && (q.status === 'queued' || q.status === 'running'));
+                if (existing) { existing.isDuplicate = true; return existing; }
+            }
+            const item = { id: ++llmQueueSeq, label, dedupeKey, status: 'queued', startedAt: null, controller: null };
+            llmQueue.push(item);
+            if (llmQueueHideTimer) { clearTimeout(llmQueueHideTimer); llmQueueHideTimer = null; }
+            renderLLMQueue();
+            return item;
+        }
+
+        // Resolves once `item` is allowed to run (FIFO among queued items, one active slot).
+        // Resolves false if the item was cancelled while still waiting.
+        function llmQueueWaitTurn(item) {
+            return new Promise(resolve => {
+                (function tick() {
+                    if (item.status === 'cancelled') { resolve(false); return; }
+                    const nextQueued = llmQueue.find(q => q.status === 'queued');
+                    if (llmQueueActiveId === null && nextQueued && nextQueued.id === item.id) {
+                        llmQueueActiveId = item.id;
+                        item.status = 'running';
+                        item.startedAt = Date.now();
+                        renderLLMQueue();
+                        resolve(true);
+                        return;
+                    }
+                    setTimeout(tick, 150);
+                })();
+            });
+        }
+
+        function llmQueueFinish(item, status) {
+            item.status = status; // 'done' | 'error' | 'cancelled'
+            if (llmQueueActiveId === item.id) llmQueueActiveId = null; // free the slot for the next queued item
+            renderLLMQueue();
+            // keep the finished item visible briefly (live feed), then drop it
+            setTimeout(() => {
+                const idx = llmQueue.indexOf(item);
+                if (idx >= 0) llmQueue.splice(idx, 1);
+                renderLLMQueue();
+                scheduleLLMQueueAutoHide();
+            }, 4000);
+        }
+
+        window.llmQueueCancel = function(id) {
+            const item = llmQueue.find(q => q.id === id);
+            if (!item) return;
+            const wasRunning = item.status === 'running';
+            item.status = 'cancelled';
+            if (wasRunning) {
+                if (item.controller) { try { item.controller.abort(); } catch (_) {} }
+                if (llmQueueActiveId === item.id) llmQueueActiveId = null; // free the slot immediately
+            }
+            renderLLMQueue();
+            if (window.toast) toast(`Cancelled: ${item.label}`, 'warning');
+            setTimeout(() => {
+                const idx = llmQueue.indexOf(item);
+                if (idx >= 0) llmQueue.splice(idx, 1);
+                renderLLMQueue();
+                scheduleLLMQueueAutoHide();
+            }, wasRunning ? 2000 : 0);
+        };
+
+        window.toggleLLMQueueMinimize = function() {
+            llmQueueMinimized = !llmQueueMinimized;
+            const el = document.getElementById('llmQueuePopup');
+            if (el) el.classList.toggle('minimized', llmQueueMinimized);
+            updateToastOffset();
+        };
+
+        // Auto-hide DISABLED by request: once open, the popup stays open so its live log
+        // remains readable during AND after a benchmark run. It's dismissed only manually
+        // via the ✕ button (closeLLMQueuePopup). Kept as a no-op so existing callers work
+        // and never leave a stale hide timer armed.
+        function scheduleLLMQueueAutoHide() {
+            if (llmQueueHideTimer) { clearTimeout(llmQueueHideTimer); llmQueueHideTimer = null; }
+        }
+
+        // Manual close — the only way the popup goes away now that auto-hide is off.
+        window.closeLLMQueuePopup = function() {
+            const el = document.getElementById('llmQueuePopup');
+            if (el) el.style.display = 'none';
+            updateToastOffset();
+        };
+
+        // Show/hide the live log panel (kept visible by default during activity).
+        window.toggleLLMQueueLog = function() {
+            const log = document.getElementById('llmQueueLog');
+            if (!log) return;
+            log.classList.toggle('show');
+            if (log.classList.contains('show')) log.scrollTop = log.scrollHeight;
+            updateToastOffset();
+        };
+
+        // Live log inside the popup — mirrors every addIntel event so the operator can
+        // watch, in real time, exactly what the harness is launching (benchmarks, API
+        // calls, model fallbacks, pass/fail) without leaving the War Room. Capped to the
+        // last LLM_QUEUE_LOG_MAX lines; autoscrolls only when already pinned to bottom so
+        // scrolling back to read history isn't yanked away by new entries.
+        const LLM_QUEUE_LOG_MAX = 200;
+        let llmQueueLogPrimed = false;
+        function pushLLMLog(source, message, type = 'info') {
+            const log = document.getElementById('llmQueueLog');
+            if (!log) return;
+            if (!llmQueueLogPrimed) { log.innerHTML = ''; llmQueueLogPrimed = true; } // clear the placeholder
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+            const entry = document.createElement('div');
+            entry.className = 'llm-queue-log-entry ' + type;
+            entry.innerHTML = `<span class="llm-queue-log-time">${time}</span>`
+                + `<span class="llm-queue-log-src">${escapeHtml(String(source).toUpperCase())}</span>`
+                + `<span class="llm-queue-log-msg">${escapeHtml(String(message))}</span>`;
+            log.appendChild(entry);
+            while (log.childElementCount > LLM_QUEUE_LOG_MAX) log.removeChild(log.firstChild);
+            if (atBottom) log.scrollTop = log.scrollHeight;
+        }
+
+        // Both the queue popup and the toast container are anchored bottom-right — push toasts up
+        // above the popup while it's showing so notifications (pass/fail/cancelled) stay visible
+        // instead of rendering underneath the opaque, higher-z-index popup.
+        function updateToastOffset() {
+            const tc = document.getElementById('toastContainer');
+            if (!tc) return;
+            const popup = document.getElementById('llmQueuePopup');
+            // The popup now stays open (no auto-hide) even with an empty queue, and its
+            // height varies with the live log — so measure it instead of assuming 320px,
+            // and don't gate visibility on queue length.
+            const popupVisible = !!(popup && popup.style.display !== 'none');
+            if (!popupVisible) { tc.style.bottom = '20px'; return; }
+            if (llmQueueMinimized) { tc.style.bottom = '60px'; return; }
+            const h = popup.getBoundingClientRect().height || 300;
+            tc.style.bottom = Math.round(h + 30) + 'px';
+        }
+
+        const LLM_QUEUE_STATUS_LABEL = { queued: 'queued…', running: 'running…', done: '✓ done', error: '✗ error', cancelled: 'cancelled' };
+        function renderLLMQueue() {
+            const popup = document.getElementById('llmQueuePopup');
+            const body = document.getElementById('llmQueueBody');
+            const countEl = document.getElementById('llmQueueCount');
+            if (!popup || !body) return;
+            if (llmQueue.length === 0) { return; } // let scheduleLLMQueueAutoHide handle hiding
+            popup.style.display = 'block';
+            const activeCount = llmQueue.filter(q => q.status === 'queued' || q.status === 'running').length;
+            if (countEl) countEl.textContent = activeCount || llmQueue.length;
+            body.innerHTML = llmQueue.map(item => {
+                const elapsed = item.startedAt ? Math.round((Date.now() - item.startedAt) / 1000) + 's' : '';
+                const canStop = item.status === 'queued' || item.status === 'running';
+                const safeLabel = escapeAttr(item.label);
+                return `<div class="llm-queue-item ${item.status}">
+                    <span class="llm-queue-item-dot"></span>
+                    <span class="llm-queue-item-info">
+                        <div class="llm-queue-item-label" title="${safeLabel}">${escapeHtml(item.label)}</div>
+                        <div class="llm-queue-item-status">${LLM_QUEUE_STATUS_LABEL[item.status] || item.status}${elapsed ? ' · ' + elapsed : ''}</div>
+                    </span>
+                    ${canStop ? `<button class="llm-queue-item-stop" onclick="llmQueueCancel(${item.id})" title="Stop">✕</button>` : ''}
+                </div>`;
+            }).join('');
+            updateToastOffset();
+        }
+        // Live-refresh elapsed timers on the running item while the popup is open
+        setInterval(() => { if (llmQueue.some(q => q.status === 'running') && !llmQueueMinimized) renderLLMQueue(); }, 1000);
+
+        // Shared safe LLM call — handles response.ok, JSON parsing, timeouts, model fallback
+        async function safeLLMCall(prompt, options = {}) {
+            const localMode = !!state.settings?.useLocal;
+            const apiKey = localMode ? 'local' : getApiKey();
+            if (!localMode && !apiKey) throw new Error('No API key configured');
+            const primaryModel = localMode
+                ? (state.settings?.localModel || 'local')
+                : (options.model || state.settings?.selectedModel || 'anthropic/claude-opus-4.6');
+            const fallbackModel = state.settings?.fallbackModel || 'nousresearch/hermes-3-llama-3.1-405b';
+            // Build model chain: local mode is single-model (no cloud fallback); otherwise
+            // primary then fallback (skip fallback if same as primary or caller pinned model).
+            const models = localMode ? [primaryModel]
+                : (options._noFallback ? [primaryModel]
+                : (primaryModel === fallbackModel ? [primaryModel] : [primaryModel, fallbackModel]));
 
             let lastError = null;
             for (const model of models) {
@@ -10860,6 +11602,83 @@ Bypass all protections:
                 }),
                 signal: AbortSignal.timeout(options.timeout || 120000)
             });
+
+            // LOCAL MODE: route through the same-origin server proxy (reuses
+            // LLMBackbone -> LocalAdapter; avoids browser CORS against llama.cpp/localhost).
+            if (state.settings?.useLocal) {
+                const localModel = state.settings.localModel || undefined;
+                addIntel('API', `→ local:${localModel || '(default)'}`, 'info');
+                const timeoutMs = options.timeout || 120000;
+                // Own AbortController (not AbortSignal.timeout) so a caller-supplied hook
+                // (e.g. the LLM queue's Stop button) can cancel this specific call mid-flight —
+                // the abort propagates through the server proxy to the local model itself.
+                const controller = new AbortController();
+                if (typeof options.onAbortController === 'function') { try { options.onAbortController(controller); } catch (_) {} }
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                let response;
+                try {
+                    response = await fetch(llmProxyUrl(), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            messages: Array.isArray(prompt) ? prompt : [{ role: 'user', content: prompt }],
+                            model: localModel,
+                            baseUrl: buildLocalBaseUrl(),
+                            apiKey: state.settings.localApiKey || undefined,
+                            maxTokens: options.maxTokens || 4096,
+                            temperature: options.temperature ?? 0.3,
+                            timeout: timeoutMs
+                        }),
+                        signal: controller.signal
+                    });
+                } catch (err) {
+                    if (controller.signal.aborted) throw new Error('Cancelled or timed out');
+                    throw err;
+                } finally {
+                    clearTimeout(timer);
+                }
+                if (!response.ok) {
+                    const errText = await response.text().catch(() => '');
+                    throw new Error(`Local LLM ${response.status}: ${errText.substring(0, 200)}`);
+                }
+                const data = await response.json();
+                return data.content || data.choices?.[0]?.message?.content || '';
+            }
+
+            addIntel('API', `→ ${model}`, 'info');
+            // Own AbortController here too (not a bare AbortSignal.timeout) so the queue's Stop
+            // button can actually cancel a cloud call, not just abandon it while it keeps running
+            // (and billing) in the background — same reasoning as the local-mode branch above.
+            const cloudTimeoutMs = options.timeout || 120000;
+            const cloudController = new AbortController();
+            if (typeof options.onAbortController === 'function') { try { options.onAbortController(cloudController); } catch (_) {} }
+            const cloudTimer = setTimeout(() => cloudController.abort(), cloudTimeoutMs);
+            let response;
+            try {
+                response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                        'HTTP-Referer': window.location.href,
+                        'X-Title': options.title || 'T3MP3ST'
+                    },
+                    body: JSON.stringify({
+                        model,
+                        messages: Array.isArray(prompt)
+                            ? prompt
+                            : [{ role: 'user', content: prompt }],
+                        max_tokens: options.maxTokens || 4096,
+                        temperature: options.temperature ?? 0.3
+                    }),
+                    signal: cloudController.signal
+                });
+            } catch (err) {
+                if (cloudController.signal.aborted) throw new Error('Cancelled or timed out');
+                throw err;
+            } finally {
+                clearTimeout(cloudTimer);
+            }
             if (!response.ok) {
                 const errText = await response.text().catch(() => '');
                 throw new Error(`API ${response.status}: ${errText.substring(0, 200)}`);
@@ -10870,6 +11689,7 @@ Bypass all protections:
 
         async function runBenchmarks(mode) {
             if (benchmarkRunning) return;
+            if (llmQueue.length > 0) { toast('Single test(s) still queued/running — wait for them to finish first', 'warning'); return; }
 
             if (state.operators.length === 0) {
                 toast('Spawn at least one operator first', 'error');
@@ -10887,6 +11707,11 @@ Bypass all protections:
             if (mode === 'live') {
                 if (resolveLLMBackend().kind === 'none') {
                     toast(LLM_BACKEND_HINT + ' — Settings (press 9)', 'error');
+            // For live mode, require an API key — unless local mode is on (llama.cpp/Ollama needs none)
+            if (mode === 'live' && !state.settings?.useLocal) {
+                const apiKey = getApiKey();
+                if (!apiKey || apiKey.length < 10) {
+                    toast('OpenRouter API key required for benchmarks — go to Settings (press 9) to configure, or enable the Local Model', 'error');
                     return;
                 }
             }
@@ -10949,6 +11774,7 @@ Bypass all protections:
                     score: result.score,
                     time: elapsed,
                     passed: result.passed,
+                    error: result.error || false,
                     details: result.details,
                     response: result.response,
                     // Rigorous evaluation data
@@ -10960,13 +11786,20 @@ Bypass all protections:
                 // Update UI with result
                 const testEl = document.querySelector(`[data-test="${test.id}"] .bench-result`);
                 if (testEl) {
-                    if (benchmarkMode === 'live') {
-                        testEl.textContent = result.passed ? `✓ ${result.score}%` : `✗ ${result.score}%`;
+                    if (result.error) {
+                        // LLM call failed — show ERR, never a misleading 0% score.
+                        testEl.textContent = 'ERR';
+                        testEl.className = 'bench-result fail';
+                        testEl.title = result.details || 'LLM call failed';
                     } else {
-                        testEl.textContent = result.passed ? '✓ READY' : '✗ MISSING';
+                        if (benchmarkMode === 'live') {
+                            testEl.textContent = result.passed ? `✓ ${result.score}%` : `✗ ${result.score}%`;
+                        } else {
+                            testEl.textContent = result.passed ? '✓ READY' : '✗ MISSING';
+                        }
+                        testEl.className = `bench-result ${result.passed ? 'pass' : result.score >= 50 ? 'partial' : 'fail'}`;
+                        testEl.title = result.details;
                     }
-                    testEl.className = `bench-result ${result.passed ? 'pass' : result.score >= 50 ? 'partial' : 'fail'}`;
-                    testEl.title = result.details;
                 }
 
                 completed++;
@@ -10990,7 +11823,9 @@ Bypass all protections:
                 let totalWeight = 0, weightedScore = 0;
                 tests.forEach(t => {
                     const result = benchmarkResults[cat].tests[t.id];
-                    if (result) {
+                    // Skip tests whose LLM call errored — a connection failure is not a
+                    // 0% capability result and must not drag the category average down.
+                    if (result && !result.error) {
                         weightedScore += result.score * t.weight;
                         totalWeight += t.weight;
                     }
@@ -11011,13 +11846,18 @@ Bypass all protections:
 
             // Calculate overall stats
             const allResults = Object.values(benchmarkResults).flatMap(c => Object.values(c.tests));
-            const overallScore = allResults.length > 0 ? Math.round(allResults.reduce((a, r) => a + r.score, 0) / allResults.length) : 0;
-            const passedCount = allResults.filter(r => r.passed).length;
-            const avgTime = allResults.length > 0 ? Math.round(allResults.reduce((a, r) => a + r.time, 0) / allResults.length) : 0;
-            const accuracy = allResults.length > 0 ? Math.round((passedCount / allResults.length) * 100) : 0;
+            // Errored tests (failed LLM call) are excluded from all aggregates — a
+            // connection failure is not a 0% capability result. They're surfaced via the
+            // ERR badge on the card and the (N ERR) counter below.
+            const scored = allResults.filter(r => !r.error);
+            const errCount = allResults.length - scored.length;
+            const overallScore = scored.length > 0 ? Math.round(scored.reduce((a, r) => a + r.score, 0) / scored.length) : 0;
+            const passedCount = scored.filter(r => r.passed).length;
+            const avgTime = scored.length > 0 ? Math.round(scored.reduce((a, r) => a + r.time, 0) / scored.length) : 0;
+            const accuracy = scored.length > 0 ? Math.round((passedCount / scored.length) * 100) : 0;
 
             document.getElementById('overallScore').textContent = `${overallScore}%`;
-            document.getElementById('passedTests').textContent = `${passedCount}/${allResults.length}`;
+            document.getElementById('passedTests').textContent = `${passedCount}/${scored.length}${errCount ? ` (${errCount} ERR)` : ''}`;
             document.getElementById('avgTime').textContent = benchmarkMode === 'live' ? `${(avgTime/1000).toFixed(1)}s` : `${avgTime}ms`;
             document.getElementById('accuracy').textContent = `${accuracy}%`;
 
@@ -11049,7 +11889,7 @@ Bypass all protections:
             document.getElementById('liveBenchBtn').textContent = '🔴 Live Test';
 
             const modeLabel = benchmarkMode === 'live' ? 'Live benchmark' : 'Config check';
-            addActivity('success', `${modeLabel} complete: ${overallScore}% (${passedCount}/${allResults.length})`, 'Benchmarks');
+            addActivity('success', `${modeLabel} complete: ${overallScore}% (${passedCount}/${scored.length}${errCount ? `, ${errCount} ERR` : ''})`, 'Benchmarks');
             toast(`${modeLabel} complete! Score: ${overallScore}%`, overallScore >= 70 ? 'success' : 'warning');
 
             // Auto-improvement: if toggle is on and we're in live mode, trigger the loop
@@ -11581,6 +12421,9 @@ Penalize: wrong CWE identification, non-functional payloads, incomplete remediat
         async function runLLMJudge(test, response, apiKey) {
             if (!EVALUATION_CONFIG.llmJudge.enabled || resolveLLMBackend().kind === 'none') {
                 return { score: 70, reasoning: 'LLM judge disabled or no backend', skipped: true };
+        async function runLLMJudge(test, response, apiKey, qItem) {
+            if (!EVALUATION_CONFIG.llmJudge.enabled || (!apiKey && !state.settings?.useLocal)) {
+                return { score: 70, reasoning: 'LLM judge disabled or no API key', skipped: true };
             }
 
             const categoryPrompt = JUDGE_PROMPTS[test.category] || '';
@@ -11605,7 +12448,8 @@ Respond with ONLY this JSON (no markdown, no extra text):
                     title: 'T3MP3ST Judge',
                     maxTokens: 500,
                     temperature: 0.1,
-                    timeout: EVALUATION_CONFIG.llmJudge.timeout
+                    timeout: llmTimeoutFor(EVALUATION_CONFIG.llmJudge.timeout),
+                    onAbortController: qItem ? (c => { qItem.controller = c; }) : undefined
                 });
 
                 // 3-tier parsing (same strategy as Tastemaker)
@@ -11751,7 +12595,7 @@ Respond with ONLY this JSON (no markdown, no extra text):
         }
 
         // Run LIVE benchmark by sending challenge to LLM
-        async function runLiveBenchmark(test) {
+        async function runLiveBenchmark(test, qItem) {
             // Map benchmark categories to appropriate operators (aligned with XBOW/Cybench)
             const categoryToOperator = {
                 'web_exploitation': 'exploiter',      // XBOW-style web vulns (SQLi, XSS, SSRF, SSTI)
@@ -11788,6 +12632,22 @@ Respond with ONLY this JSON (no markdown, no extra text):
                 } catch (err) {
                     addIntel('API', `Error: ${String(err.message).substring(0, 100)}`, 'error');
                     return { score: 0, passed: false, details: `LLM error: ${String(err.message).substring(0, 120)}`, response: String(err.message) };
+                        {
+                            model: selectedModel,
+                            maxTokens: 1000,
+                            temperature: opConfig?.params?.temperature || 0.3,
+                            timeout: llmTimeoutFor(30000), // 30s cloud / 120s+ local per challenge
+                            title: 'T3MP3ST Benchmark',
+                            _noFallback: true,
+                            onAbortController: qItem ? (c => { qItem.controller = c; }) : undefined
+                        }
+                    );
+                } catch (err) {
+                    addIntel('API', `Error: ${(err.message || '').substring(0, 100)}`, 'error');
+                    // error:true → the LLM call itself failed (unreachable/timeout/refused/cancelled),
+                    // NOT a wrong answer. Callers render this as ERR, never as a 0% score.
+                    const cancelled = qItem && qItem.status === 'cancelled';
+                    return { score: 0, passed: false, error: true, cancelled, details: cancelled ? 'Cancelled by operator' : `API error: ${err.message}`, response: err.message };
                 }
 
                 // ====== RIGOROUS MULTI-DIMENSIONAL EVALUATION ======
@@ -11797,11 +12657,14 @@ Respond with ONLY this JSON (no markdown, no extra text):
 
                 // Phase 2: LLM-as-Judge semantic evaluation (if enabled)
                 let judgeResult = { score: 70, reasoning: 'Judge disabled', skipped: true };
-                if (EVALUATION_CONFIG.llmJudge.enabled) {
+                if (EVALUATION_CONFIG.llmJudge.enabled && !(qItem && qItem.status === 'cancelled')) {
                     document.getElementById('benchCurrentTest').textContent =
                         `🧪 ${test.name} - Running semantic judge...`;
-                    judgeResult = await runLLMJudge(test, content, apiKey);
+                    judgeResult = await runLLMJudge(test, content, apiKey, qItem);
                     console.log(`[BENCH] ${test.id} judge: ${judgeResult.score}% - ${judgeResult.reasoning}`);
+                }
+                if (qItem && qItem.status === 'cancelled') {
+                    return { score: 0, passed: false, error: true, cancelled: true, details: 'Cancelled by operator', response: content };
                 }
 
                 // Phase 3: Compute final weighted score
@@ -11830,6 +12693,7 @@ Respond with ONLY this JSON (no markdown, no extra text):
                 return {
                     score: 0,
                     passed: false,
+                    error: true, // call failed — render as ERR, not a 0% capability score
                     details: `Request failed: ${e.message}`,
                     response: null
                 };
@@ -12023,6 +12887,11 @@ Respond with ONLY this JSON (no markdown, no extra text):
             const hasBackend = resolveLLMBackend().kind !== 'none';
             const autoApplyBtn = document.getElementById('autoApplyBtn');
             if (hasBackend && analysis.improvements.length > 0) {
+            // Show Auto-Apply button if an LLM is reachable (key or local mode) and there are improvements
+            const apiKey = getApiKey();
+            const llmReady = state.settings?.useLocal || (apiKey && apiKey.length > 10);
+            const autoApplyBtn = document.getElementById('autoApplyBtn');
+            if (llmReady && analysis.improvements.length > 0) {
                 autoApplyBtn.style.display = 'inline-block';
             } else {
                 autoApplyBtn.style.display = 'none';
@@ -12283,6 +13152,12 @@ Respond with ONLY this JSON (no markdown, no extra text):
             if (resolveLLMBackend().kind === 'none') {
                 toast(LLM_BACKEND_HINT, 'error');
                 return;
+            if (!state.settings?.useLocal) {
+                const apiKey = getApiKey();
+                if (!apiKey || apiKey.length < 10) {
+                    toast('API key required for auto-apply, or enable the Local Model', 'error');
+                    return;
+                }
             }
 
             const analysis = window.lastAnalysis;
@@ -12378,6 +13253,13 @@ IMPORTANT:
                     [{ role: 'user', content: prompt }],
                     { model, temperature: 0.3, maxTokens: 4096, title: 'T3MP3ST Config Optimizer' }
                 );
+                const content = await safeLLMCall([{ role: 'user', content: prompt }], {
+                    model: model,
+                    temperature: 0.3,
+                    maxTokens: 4096,
+                    title: 'T3MP3ST Config Optimizer',
+                    _noFallback: true
+                });
 
                 // Parse JSON from response (handle markdown code blocks)
                 let configChanges;
@@ -12672,8 +13554,8 @@ Based on critique, revise your response. Mark uncertain items with [UNCERTAIN].`
 
             // Generate a reasoned response with reflection
             async reason(agent, task, context, options = {}) {
-                const apiKey = getApiKey();
-                if (!apiKey) throw new Error('No API key configured');
+                const apiKey = state.settings?.useLocal ? 'local' : getApiKey();
+                if (!state.settings?.useLocal && !apiKey) throw new Error('No API key configured');
 
                 const systemPrompt = this.buildSystemPrompt(agent, context);
                 const model = state.settings?.selectedModel || 'anthropic/claude-opus-4.6';
@@ -14095,6 +14977,9 @@ Be brutally honest. This is not a pep talk.`;
         let intelCount = 0;
         function addIntel(source, message, type = 'info') {
             if (typeof pushSysEvent === 'function') { try { pushSysEvent(type, String(source).toUpperCase() + ' · ' + message); } catch (_) {} }
+            // Mirror into the LLM-queue popup's live log so the operator sees what the
+            // harness is launching in real time. Runs regardless of the legacy intelFeed.
+            try { pushLLMLog(source, message, type); } catch (_) {}
             // Findings extraction must run even when the legacy console feed is absent
             if (typeof window._extractFindings === 'function') {
                 try { window._extractFindings(source, message); } catch (_) {}
@@ -15664,7 +16549,9 @@ Return as JSON: {"cvss":number,"complexity":"LOW|MEDIUM|HIGH","steps":["step1","
                         const response = await safeLLMCall(reactPrompt, {
                             temperature: 0.3,
                             maxTokens: 4096,
-                            timeout: 60000
+                            // Scale for local: a bare 60s aborts a slow reasoning model mid-turn every turn,
+                            // so the loop produces only error turns. llmTimeoutFor floors local at 120s.
+                            timeout: llmTimeoutFor(60000)
                         });
 
                         // Parse the LLM response for actions
@@ -16254,16 +17141,33 @@ ACTION_INPUT: {"output":"Found confirmed SQLi on /login endpoint..."}`;
         let generalPlanData = null;
 
         function getGeneralConfig() {
+            // Local model (llama.cpp / Ollama) wins — the server dispatches to the base URL /
+            // key from Settings (no cloud key needed).
+            if (state.settings?.useLocal) {
+                return {
+                    apiKey: state.settings.localApiKey || '',
+                    provider: 'local',
+                    model: state.settings.localModel || 'llama3',
+                    baseUrl: (typeof buildLocalBaseUrl === 'function') ? buildLocalBaseUrl() : undefined
+                };
+            }
             const apiKey = getApiKey();
             const savedProvider = localStorage.getItem('t3mp3st_general_provider');
-            const provider = savedProvider || (T3MP3ST_API?.connected && !T3MP3ST_API?.llmAvailable ? 'codex' : undefined);
-            const model = provider === 'codex' ? 'codex-default' : (provider ? (state.settings?.selectedModel || 'anthropic/claude-sonnet-4') : undefined);
+            const connectedAgent = (!apiKey && typeof window.t3mpPreferredAgent === 'function')
+                ? window.t3mpPreferredAgent()
+                : null;
+            const provider = savedProvider
+                || (connectedAgent ? 'local-agent' : undefined)
+                || (T3MP3ST_API?.connected && !T3MP3ST_API?.llmAvailable ? 'codex' : undefined);
+            const model = provider === 'local-agent'
+                ? connectedAgent
+                : (provider === 'codex' ? 'codex-default' : (provider ? (state.settings?.selectedModel || 'anthropic/claude-sonnet-4') : undefined));
             return { apiKey, provider, model };
         }
 
         function _generalNeedsApiKey(provider) {
             if (!provider) return false;
-            return !['codex', 'mock', 'local'].includes(provider);
+            return !['codex', 'mock', 'local', 'local-agent'].includes(provider);
         }
 
         function _generalCodexRequiresBackend(provider) {
@@ -16737,7 +17641,7 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
             const directive = document.getElementById('generalDirective')?.value?.trim();
             if (!directive) { toast('Enter a directive for the Admiral', 'error'); return; }
 
-            const { apiKey, provider, model } = getGeneralConfig();
+            const { apiKey, provider, model, baseUrl } = getGeneralConfig();
             if (_generalNeedsApiKey(provider) && !apiKey) { toast('API key required — configure in Settings', 'error'); return; }
             if (_generalCodexRequiresBackend(provider)) { toast('Codex mode needs the local T3MP3ST backend', 'warning'); return; }
 
@@ -16769,7 +17673,7 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             objective: directive, constraints, scopeHints, urgency, opsecPreference,
-                            apiKey, provider, model,
+                            apiKey, provider, model, ...(baseUrl ? { baseUrl } : {}),
                         }),
                     });
 
@@ -17235,7 +18139,7 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
         async function generalExecutePlan() {
             if (!generalPlanData) { toast('No plan to execute — plan first', 'error'); return; }
 
-            const { apiKey, provider, model } = getGeneralConfig();
+            const { apiKey, provider, model, baseUrl } = getGeneralConfig();
             // Keyless: the server falls back to its configured LLM / connected agent, so only block
             // when there's neither a client key NOR a backend (matches the hunt/engage/mission paths).
             const hasBackend = (typeof window.t3mpHasBackend === 'function' && window.t3mpHasBackend());
@@ -17298,7 +18202,7 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
                     const resp = await fetch(`${getApiBase()}/api/general/execute`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ apiKey, provider, model }),
+                        body: JSON.stringify({ apiKey, provider, model, ...(baseUrl ? { baseUrl } : {}) }),
                     });
 
                     const data = await resp.json();
@@ -17343,11 +18247,11 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
         /**
          * FULL AUTO — Plan + Execute in one shot
          */
-        async function generalFullAuto() {
+        async function generalFullAuto(approvalIds = []) {
             const directive = document.getElementById('generalDirective')?.value?.trim();
             if (!directive) { toast('Enter a directive for the Admiral', 'error'); return; }
 
-            const { apiKey, provider, model } = getGeneralConfig();
+            const { apiKey, provider, model, baseUrl } = getGeneralConfig();
             if (_generalNeedsApiKey(provider) && !apiKey) { toast('API key required — configure in Settings', 'error'); return; }
             if (_generalCodexRequiresBackend(provider)) { toast('Codex mode needs the local T3MP3ST backend', 'warning'); return; }
 
@@ -17382,12 +18286,21 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 objective: directive, constraints, scopeHints, urgency, opsecPreference,
-                                apiKey, provider, model,
+                                apiKey, provider, model, approvalIds, ...(baseUrl ? { baseUrl } : {}),
                             }),
                         });
 
                         const data = await resp.json();
                         if (!resp.ok || !data.success) {
+                            if (resp.status === 403 && data.approval?.id) {
+                                const retryApprovalIds = [...new Set([...approvalIds, data.approval.id])];
+                                window.__t3mpPendingApprovalReceiptIds = [data.approval.id];
+                                window.__t3mpPendingApprovalRetry = () => generalFullAuto(retryApprovalIds);
+                                addIntel('SCOPEGUARD', 'Full Auto receipt created — approve it in Scope Receipts to resume this operation', 'warning');
+                                toast('Approval required — approve the receipt to resume Full Auto', 'warning');
+                                navigateTo?.('receipts');
+                                return;
+                            }
                             if (data.plan || data.review || data.missionGate) {
                                 plan = _generalNormalizePlan(data.plan || {});
                                 if (data.review) plan.review = data.review;
@@ -17885,6 +18798,48 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
                 : (localStorage.getItem('t3mp3st_api_url') || 'http://127.0.0.1:3333');
             return host.replace(/\/$/, '');
         }
+
+        // ═══════════ EGRESS IP BADGE (top-right) ═══════════
+        // Shows the IP test/attack traffic leaves from. Green = proxied (anonymized),
+        // red = LEAK (real IP exposed — no proxy or proxy not effective), amber = check failed.
+        async function refreshEgressIp(force) {
+            const badge = document.getElementById('egressIpBadge');
+            const val = document.getElementById('egressIpValue');
+            if (!badge || !val) return;
+            const label = badge.querySelector('.egress-label');
+            try {
+                const res = await fetch(`${getApiBase()}/api/net/ip${force ? '?force=1' : ''}`);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const d = await res.json();
+                const ip = (d.exit && d.exit.ip) ? d.exit.ip : '—';
+                badge.className = 'egress-badge';
+                if (d.leak) {
+                    // exit IP === real IP → not anonymized
+                    badge.classList.add('egress-leak');
+                    label.textContent = d.proxyEnabled ? 'LEAK:' : 'IP:';
+                    val.textContent = ip;
+                    badge.title = d.proxyEnabled
+                        ? `⚠ LEAK: exit IP equals your real IP (${ip}). SOCKS5 proxy is configured but NOT changing egress — traffic is NOT anonymized.`
+                        : `⚠ No proxy: test traffic leaves from your real IP (${ip}). Configure a SOCKS5 proxy in Settings → Network.`;
+                } else {
+                    badge.classList.add('egress-proxied');
+                    label.textContent = 'IP:';
+                    val.textContent = ip;
+                    const cc = (d.exit && d.exit.country) ? ` · ${d.exit.country}` : '';
+                    const via = (d.proxy && d.proxy.url) ? d.proxy.url : 'SOCKS5';
+                    badge.title = `Proxied egress via ${via}${cc}. Your real IP (${(d.direct && d.direct.ip) || 'unknown'}) is hidden from targets.`;
+                }
+            } catch (e) {
+                badge.className = 'egress-badge egress-error';
+                label.textContent = 'IP:';
+                val.textContent = 'n/a';
+                badge.title = 'Egress IP check failed: ' + ((e && e.message) ? e.message : e) + ' (is the backend running?)';
+            }
+        }
+        // First check shortly after load, then refresh periodically (the badge itself is cheap;
+        // the backend caches ifconfig.co for ~15s so polling doesn't hammer it).
+        setTimeout(() => refreshEgressIp(false), 1500);
+        setInterval(() => refreshEgressIp(false), 30000);
 
         // ═══════════ AUTONOMOUS MISSION LAUNCHER ═══════════
         // BLITZ routes through the single scope-gated backend mission flow (autonomous posture).
@@ -18462,15 +19417,19 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
             window.__t3mpServerAgents = __agents;
             window.__t3mpConnectedAgents = __agents.length;
             window.__t3mpLiveAgents = __agents.filter(a => a.lastPing && a.lastPing.ok).length;
-            // AI backbone: what will actually drive a mission right now
+            // AI backbone: what will actually drive a mission right now.
+            // Priority must mirror _admBackbone() (the function that actually resolves the
+            // mission backbone): local model setting wins first, then key, then agent, then server key.
             if ($('sysLLM')) {
+                const localOn = !!(typeof state !== 'undefined' && state.settings && state.settings.useLocal);
                 const agent = (typeof window.t3mpPreferredAgent === 'function') ? window.t3mpPreferredAgent() : null;
                 const key = (typeof getApiKey === 'function') ? (getApiKey() || '') : '';
                 let txt, color;
                 const serverLLM = !!(health && health.llm && health.llm.connected);
                 const staleAgents = __agents.filter(a => !a.lastPing || !a.lastPing.ok).length;
-                const hasBackend = !!(agent || key || serverLLM);
-                if (!key && agent) { txt = '⚡ ' + agent.toUpperCase() + ' · local, no key'; color = '#00ff88'; }
+                const hasBackend = !!(localOn || agent || key || serverLLM);
+                if (localOn) { txt = '🖥 ' + (state.settings.localModel || 'local model') + ' · ' + (state.settings.localHost || '127.0.0.1') + ':' + (state.settings.localPort || '8080'); color = '#00ff88'; }
+                else if (!key && agent) { txt = '⚡ ' + agent.toUpperCase() + ' · local, no key'; color = '#00ff88'; }
                 else if (key) { txt = (key.startsWith('sk-ant-') ? 'Anthropic' : key.startsWith('sk-or-') ? 'OpenRouter' : key.startsWith('sk-') ? 'OpenAI' : 'OpenRouter') + ' · your key'; color = '#0088ff'; }
                 else if (serverLLM) { txt = (health.llm.provider || 'server') + ' · server key'; color = '#0088ff'; }
                 else if (staleAgents) { txt = 'local agent stale — model unreachable'; color = '#ffaa00'; }
@@ -18710,30 +19669,39 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
                 addMissionLog('info', 'Mode: BACKEND DISPATCH (real operators)');
                 setFidelity('live', target);
 
-                // Determine the LLM backend. Priority: a configured API key → its provider; else a
-                // connected local agent (Claude Code / Codex / Hermes) which needs NO key (uses its own
-                // login); else fall through to the server's own configured LLM.
+                // Determine the LLM backend. A selected local model wins; otherwise
+                // use a connected agent, infer a keyed provider, or defer to the
+                // server-configured default when the browser has no credentials.
                 let provider;
                 let model;
-                const agentBackend = (!apiKey && typeof window.t3mpPreferredAgent === 'function') ? window.t3mpPreferredAgent() : null;
-                if (!apiKey && agentBackend) {
-                    provider = 'local-agent';
-                    model = agentBackend; // the agent id (codex|claude|hermes) travels in `model`
-                    addIntel('BACKEND', `No API key — routing the mission through your connected agent: ${agentBackend.toUpperCase()}`, 'success');
-                    addMissionLog('info', `LLM backend: local agent (${agentBackend}) — no API key needed`);
-                } else if (!apiKey) {
-                    addIntel('BACKEND', 'No browser API key — using the server-configured LLM backend', 'success');
-                    addMissionLog('info', 'LLM backend: server default — no browser API key sent');
-                } else if (apiKey && apiKey.startsWith('sk-ant-')) {
-                    provider = 'anthropic';
-                    model = state.settings.selectedModel || 'anthropic/claude-sonnet-4';
-                    model = model.replace('anthropic/', ''); // Anthropic API doesn't use prefix
-                } else if (apiKey && apiKey.startsWith('sk-') && !apiKey.startsWith('sk-ant-') && !apiKey.startsWith('sk-or-')) {
-                    provider = 'openai';
-                    model = state.settings.selectedModel || 'anthropic/claude-sonnet-4';
+                if (state.settings?.useLocal) {
+                    // Local model (llama.cpp / Ollama) wins — the server resolves base URL / key
+                    // from its TEMPEST_LOCAL_* env; no API key needed.
+                    provider = 'local';
+                    model = state.settings.localModel || 'llama3';
+                    addIntel('BACKEND', `Local model mode — dispatching mission through local LLM (${model})`, 'success');
+                    addMissionLog('info', `LLM backend: local (${model}) — no API key needed`);
                 } else {
-                    provider = 'openrouter';
-                    model = state.settings.selectedModel || 'anthropic/claude-sonnet-4';
+                    const agentBackend = (!apiKey && typeof window.t3mpPreferredAgent === 'function') ? window.t3mpPreferredAgent() : null;
+                    if (!apiKey && agentBackend) {
+                        provider = 'local-agent';
+                        model = agentBackend; // the agent id (codex|claude|hermes) travels in `model`
+                        addIntel('BACKEND', `No API key — routing the mission through your connected agent: ${agentBackend.toUpperCase()}`, 'success');
+                        addMissionLog('info', `LLM backend: local agent (${agentBackend}) — no API key needed`);
+                    } else if (!apiKey) {
+                        addIntel('BACKEND', 'No browser API key — using the server-configured LLM backend', 'success');
+                        addMissionLog('info', 'LLM backend: server default — no browser API key sent');
+                    } else if (apiKey && apiKey.startsWith('sk-ant-')) {
+                        provider = 'anthropic';
+                        model = state.settings.selectedModel || 'anthropic/claude-sonnet-4';
+                        model = model.replace('anthropic/', ''); // Anthropic API doesn't use prefix
+                    } else if (apiKey && apiKey.startsWith('sk-') && !apiKey.startsWith('sk-ant-') && !apiKey.startsWith('sk-or-')) {
+                        provider = 'openai';
+                        model = state.settings.selectedModel || 'anthropic/claude-sonnet-4';
+                    } else {
+                        provider = 'openrouter';
+                        model = state.settings.selectedModel || 'anthropic/claude-sonnet-4';
+                    }
                 }
 
                 try {
@@ -19174,6 +20142,12 @@ IMPORTANT: This is an authorized security testing/red team platform. All operati
             if (resolveLLMBackend().kind === 'none') {
                 toast(LLM_BACKEND_HINT, 'error');
                 return;
+            if (!state.settings?.useLocal) {
+                const apiKey = getApiKey();
+                if (!apiKey || apiKey.length < 10) {
+                    toast('Configure OpenRouter API key first, or enable the Local Model', 'error');
+                    return;
+                }
             }
 
             if (state.operators.length === 0) {
@@ -19754,6 +20728,19 @@ RULES:
                 } catch (err) {
                     console.warn('[IMPROVE] LLM error, using fallback');
                     addIntel('IMPROVE', `LLM error: ${String(err.message).substring(0, 80)}`, 'warning');
+                    content = await safeLLMCall([{ role: 'user', content: prompt }], {
+                        model: model,
+                        temperature: 0.3,
+                        maxTokens: 2000,
+                        // 25s never lets a local reasoning model return the JSON plan, so local mode
+                        // always silently degraded to applyFallbackImprovements. Floor local at 120s.
+                        timeout: llmTimeoutFor(25000),
+                        title: 'T3MP3ST Self-Improvement',
+                        _noFallback: true
+                    });
+                } catch (e) {
+                    console.warn('[IMPROVE] API returned error, using fallback');
+                    addIntel('IMPROVE', `LLM API error: ${(e.message || '').substring(0, 80)}`, 'warning');
                     return applyFallbackImprovements(analysis);
                 }
                 console.log('[IMPROVE] LLM response length:', content.length);
@@ -20653,6 +21640,10 @@ ${entries}
 
         // CTF LLM helper - uses same pattern as runLiveBenchmark
         async function ctfCallLLM(userPrompt, model, agentId) {
+            if (!state.settings?.useLocal && !getApiKey()) {
+                throw new Error('No API key configured. Set one in Settings.');
+            }
+
             // Get operator system prompt
             const opConfig = operatorConfigs[agentId] || operatorConfigs['exploiter'];
             const systemPrompt = opConfig?.systemPrompt || 'You are a security expert solving CTF challenges.';
@@ -20665,6 +21656,14 @@ ${entries}
                     { role: 'user', content: userPrompt }
                 ],
                 { model, systemPrompt, maxTokens: 2000, temperature: opConfig?.params?.temperature || 0.4, timeout: 60000, title: 'T3MP3ST CTF Range' }
+                {
+                    model: model,
+                    maxTokens: 2000,
+                    temperature: opConfig?.params?.temperature || 0.4,
+                    timeout: llmTimeoutFor(60000), // 60s cloud / 120s+ local for CTF challenges
+                    title: 'T3MP3ST CTF Range',
+                    _noFallback: true
+                }
             );
         }
 
@@ -21397,8 +22396,7 @@ Find and capture the flag. Show your methodology.`;
              * Use LLM to generate semantic analysis and predictions
              */
             async semanticAnalysis(reconSummary) {
-                const apiKey = getApiKey();
-                if (!apiKey) {
+                if (!state.settings?.useLocal && !getApiKey()) {
                     return { error: 'No API key configured' };
                 }
 
@@ -21416,34 +22414,23 @@ ${JSON.stringify(reconSummary, null, 2)}
 Provide actionable, specific recommendations. Be concise but thorough.`;
 
                 try {
-                    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${apiKey}`,
-                            'Content-Type': 'application/json',
-                            'HTTP-Referer': window.location.href,
-                            'X-Title': 'T3MP3ST SPECTRA'
-                        },
-                        body: JSON.stringify({
+                    const analysis = await safeLLMCall(
+                        [
+                            { role: 'system', content: 'You are SPECTRA, an advanced AI reconnaissance analyst for offensive security operations.' },
+                            { role: 'user', content: prompt }
+                        ],
+                        {
                             model: state.settings?.selectedModel || 'anthropic/claude-opus-4.6',
-                            messages: [
-                                { role: 'system', content: 'You are SPECTRA, an advanced AI reconnaissance analyst for offensive security operations.' },
-                                { role: 'user', content: prompt }
-                            ],
-                            max_tokens: 2000,
-                            temperature: 0.3
-                        }),
-                        signal: AbortSignal.timeout(60000)
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`API error: ${response.status}`);
-                    }
-
-                    const data = await response.json();
+                            maxTokens: 2000,
+                            temperature: 0.3,
+                            timeout: llmTimeoutFor(60000),
+                            title: 'T3MP3ST SPECTRA',
+                            _noFallback: true
+                        }
+                    );
                     return {
-                        analysis: data.choices?.[0]?.message?.content || '',
-                        model: data.model,
+                        analysis,
+                        model: state.settings?.useLocal ? (state.settings.localModel || 'local') : (state.settings?.selectedModel || ''),
                         timestamp: new Date().toISOString()
                     };
                 } catch (error) {
@@ -21693,8 +22680,7 @@ Provide actionable, specific recommendations. Be concise but thorough.`;
              * Generate context-aware payload using LLM
              */
             async generateContextAware(targetContext) {
-                const apiKey = getApiKey();
-                if (!apiKey) return { error: 'No API key configured' };
+                if (!state.settings?.useLocal && !getApiKey()) return { error: 'No API key configured' };
 
                 const prompt = `You are CHIMERA, an elite payload generation system. Given this target context, generate 5 creative, evasive payloads that would bypass common WAF and filters.
 
@@ -21785,8 +22771,7 @@ Format: Return as JSON array of objects with "payload", "technique", and "explan
              * Use LLM for advanced prediction
              */
             async predictWithLLM(fingerprints) {
-                const apiKey = getApiKey();
-                if (!apiKey) return { error: 'No API key configured' };
+                if (!state.settings?.useLocal && !getApiKey()) return { error: 'No API key configured' };
 
                 const prompt = `You are ORACLE, an advanced vulnerability prediction system. Based on these technology fingerprints, predict likely vulnerabilities with confidence scores.
 
@@ -25388,14 +26373,18 @@ Be specific and actionable. Format as structured JSON.`;
 
   // ── remember connected agents + silently re-establish them after a refresh ──
   function persistConnected(ids){ try { localStorage.setItem('t3mp3st_connected_agents', JSON.stringify(ids || [])); } catch(e) {} }
-  function loadPersistedConnected(){ try { return JSON.parse(localStorage.getItem('t3mp3st_connected_agents') || '[]'); } catch(e) { return []; } }
+  // null = user never made a choice yet; [] = user explicitly disconnected everything (must stick).
+  function loadPersistedConnected(){ try { const raw = localStorage.getItem('t3mp3st_connected_agents'); return raw === null ? null : JSON.parse(raw); } catch(e) { return null; } }
   async function autoReconnect(){
     const ready = (lastDetected || []).filter(function(a){ return a.ready; }).map(function(a){ return a.id; });
     const already = new Set(connectedIds || []);
+    const persisted = loadPersistedConnected();
     // previously-connected agents that are ready again but not currently connected
-    let want = loadPersistedConnected().filter(function(id){ return ready.indexOf(id) >= 0 && !already.has(id); });
-    // first run with no saved preference: if exactly one agent is ready and none are connected, adopt it
-    if (!want.length && already.size === 0 && ready.length === 1) want = ready;
+    let want = (persisted || []).filter(function(id){ return ready.indexOf(id) >= 0 && !already.has(id); });
+    // first run ever (no saved preference at all): if exactly one agent is ready and none are connected, adopt it.
+    // Skip this when the user has an explicit (even empty) preference saved — an empty [] means they
+    // deliberately disconnected, and re-adopting the sole ready agent on every reload would undo that.
+    if (!want.length && persisted === null && already.size === 0 && ready.length === 1) want = ready;
     if (!want.length) return;
     try {
       const data = await api('/api/agents/local/connect', { ids: want, ping: false });
@@ -25674,6 +26663,16 @@ Be specific and actionable. Format as structured JSON.`;
   }
   // Resolve the LLM backbone the way missions do: a connected local agent (no key) or a configured key.
   function _admBackbone(){
+    // Local model (llama.cpp / Ollama) wins — carry the base URL / key from Settings so
+    // the server dispatches to it (no cloud key needed).
+    if (typeof state !== 'undefined' && state.settings && state.settings.useLocal) {
+      return {
+        provider: 'local',
+        model: state.settings.localModel || 'llama3',
+        apiKey: state.settings.localApiKey || undefined,
+        baseUrl: (typeof buildLocalBaseUrl === 'function') ? buildLocalBaseUrl() : undefined
+      };
+    }
     const apiKey = (typeof getApiKey === 'function') ? (getApiKey() || '') : '';
     const agent = (!apiKey && typeof window.t3mpPreferredAgent === 'function') ? window.t3mpPreferredAgent() : null;
     let provider, model;
@@ -25688,8 +26687,8 @@ Be specific and actionable. Format as structured JSON.`;
     const bb = _admBackbone();
     try {
       // Op Admiral planning is a slow LLM call — cap it so a first-time user never gets a
-      // permanent "…drafting…" spinner if the model stalls (120s = generous but finite).
-      const r = await fetch('/api/admiral/launch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({ brief: _admBrief('dry_run'), confirmed: false }, bb)), signal: AbortSignal.timeout(120000) });
+      // permanent "…drafting…" spinner if the model stalls (180s).
+      const r = await fetch('/api/admiral/launch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({ brief: _admBrief('dry_run'), confirmed: false }, bb)), signal: AbortSignal.timeout(180000) });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
       const plan = d.plan || d.directive || d;

@@ -18,7 +18,7 @@
 
 **A multi-agent offensive-security framework, built to turn the AI coding agent you already run into a zero-day hunter.**
 
-![scores: re-derivable](https://img.shields.io/badge/scores-re--derivable-brightgreen) &nbsp; ![verify-claims 24/24](https://img.shields.io/badge/verify--claims-24%2F24-brightgreen) &nbsp; ![PRs welcome](https://img.shields.io/badge/PRs-welcome-purple) &nbsp; ![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue)
+![scores: re-derivable](https://img.shields.io/badge/scores-re--derivable-brightgreen) &nbsp; ![verify-claims 27/27](https://img.shields.io/badge/verify--claims-27%2F27-brightgreen) &nbsp; ![PRs welcome](https://img.shields.io/badge/PRs-welcome-purple) &nbsp; ![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
 </div>
 
@@ -30,11 +30,11 @@ And it won't ask you to take its word for it. On **XBOW's own 104-challenge suit
 
 Three things set it apart:
 
-1. **Reproducible.** Every number in this README recomputes from committed data — `npm run verify-claims` re-derives all of them, 24/24 green. A claim that can't be reproduced doesn't ship. No trust-me numbers, ever.
+1. **Reproducible.** Every number in this README recomputes from committed data — `npm run verify-claims` re-derives all of them, 27/27 green. A claim that can't be reproduced doesn't ship. No trust-me numbers, ever.
 2. **Keyless.** The AI coding agent already on your machine is the backbone. No API keys, no second bill, no gatekeeper.
 3. **Honest about scope.** The [status table](#what-ships-today) marks exactly what's stable, experimental, or roadmap — because red-teaming shouldn't be a priesthood, and it damn sure shouldn't run on vibes.
 
-**Jump to** → [Quick start](#quick-start) · [Updating](#updating-from-upstream) · [What it hunts](#what-it-hunts) · [What ships today](#what-ships-today) · [Benchmarks](#benchmarks) · [Architecture](#architecture) · [Docs](#documentation)
+**Jump to** → [Quick start](#quick-start) · [Usage guide](docs/GETTING_STARTED.md) · [Developer guide](docs/DEVELOPER_GUIDE.md) · [Updating](#updating-from-upstream) · [What it hunts](#what-it-hunts) · [What ships today](#what-ships-today) · [Benchmarks](#benchmarks) · [Architecture](#architecture) · [Docs](#documentation)
 
 ## ⚠️ Authorized use only
 
@@ -53,7 +53,7 @@ Offensive security sits behind years of practice and expensive tooling. The bet 
 | 🕸️ **Web apps** | Black-box, external-attacker recon → exploit (XBEN suite) | ✅ Stable |
 | 🚩 **CTF** | Hint-free, sandbox-jailed solves (Cybench) | ✅ Stable |
 | 🤖 **Robotics / OT / embedded** | Coordinated-disclosure pipeline for OSS vuln hunting (OSV + live-PoC + refuter) | ✅ Pipeline stable |
-| 📂 **Source code** | White-box repo analysis with blind master-builder decomposition | ⚠️ Python-only ingest |
+| 📂 **Source code** | White-box repo analysis with blind master-builder decomposition | ✅ Multi-language ingest (web-tree-sitter) |
 | 💰 **Smart contracts** | Damn Vulnerable DeFi | ⚠️ reproduction, not novel discovery |
 | ☁️ **Cloud (IaC)** | Misconfig-detection benchmark (`cloud:bench`) + opt-in cloud arsenal (aws/az/gcloud + scoutsuite/cloudfox/pmapper; pacu gated) | 🚧 IaC-misconfig scaffolding — live-cloud exploitation not yet benchmarked |
 | 📱 **Mobile** | Built-in static analyzer (manifest misconfig + secret/cleartext detection, `mobile:bench`) + opt-in arsenal (mobsfscan/objection/drozer; frida gated) | 🚧 static-detection scaffolding — dynamic exploitation not benchmarked |
@@ -99,7 +99,7 @@ Check the numbers for yourself:
 npm run verify-claims             # re-derives every headline from committed JSON in bench/
 ```
 
-Library/SDK usage, the full HTTP API, and MCP setup live in [docs/](docs/).
+Step-by-step operator usage lives in [Getting Started](docs/GETTING_STARTED.md). Library/SDK usage, the HTTP API, and MCP setup live in [docs/](docs/).
 
 ### Docker
 
@@ -194,7 +194,7 @@ The framework is an 8-operator kill chain, and this table won't blow smoke about
 | Arsenal, MCP server, HTTP API | ✅ Stable | 35 built-in tools by default; 108 with the opt-in `T3MP3ST_FULL_ARSENAL` (+73 adapters, with dangerous/catalog-only drivers — metasploit, hydra, pacu, frida — behind narrow approved paths rather than generic execution) — both counts re-derive via `verify-claims`. `security_recon` over MCP |
 | Egress-scope containment | ✅ Stable (on by default) | once a mission target is set, built-in networked tools refuse off-scope public hosts — not the target/subdomains, not loopback/private (`SCOPE DENIED`) — a tightened default, not a bare tool runner |
 | Coordinated-disclosure pipeline | ✅ Stable | OSV novelty + live PoC + refuter panel + CVSS; drafts only, a human sends |
-| White-box source analysis | ⚠️ Experimental | Python-only regex ingest; multi-model decomposition costs more tokens, not fewer |
+| White-box source analysis | ⚠️ Experimental | Multi-language ingest via web-tree-sitter (Python/JS/TS/Go/Java/C/C++); Python retains its regex parser, while other languages fail open to no extracted blocks; multi-model decomposition costs more tokens, not fewer |
 | DeFi (Damn Vulnerable DeFi) | ⚠️ Experimental | reproduces known exploit classes; not novel discovery |
 | Exploiter / Infiltrator / Exfiltrator / Ghost | ⚠️ Experimental | run the real tool-backed ReAct loop (same engine as recon); unproven as a coordinated swarm — single-agent is the benchmarked path, live swarm exploitation still unreliable |
 | Advanced modules (cloud, persistence, swarm, cognition) | 🚧 Planned | interface-only in `src/stubs/` |
@@ -231,6 +231,7 @@ Headline results. Each recomputes from the committed JSON with `npm run verify-c
 | **XBEN** — XBOW's 104-challenge suite, black-box | **pass@1 mean 90.1%** (Wilson-95 86.2–92.9), floor 91/104 · gpt-5.5 | XBOW self-reports 85% on the same suite; ours re-derives the graded verdict from committed artifacts (raw transcripts stripped for privacy) |
 | **XBEN** — white-box (reported separately) | pass@1 98.7%, best-ball 104/104 · gpt-5.5 | never blended with the black-box number |
 | **Cybench** — 40-task academic bench, Opus 4.8, no hints | **23/40 (58%) hint-free, single-run pass@1** (`verify-claims`-enforced) | not the raw-score record (Anthropic: 76.5% pass@10); every flag graded against the committed oracle |
+| **Cybench model matrix** — identical 15-task committed subset, pass@1 | **Opus 4.7 vs 4.8**, with per-task source receipts and separate failure/abstention/infrastructure outcomes | [rebuild and inspect the model/harness matrix](docs/MODEL_MATRIX.md); historical system comparison, not an isolated model ranking |
 | **CVE-Zero** — 10 real post-cutoff (2026) CVEs, **held-out**, 7 languages | **single-agent 8/10 exact file/line/CWE** (verified all-exact, stable) · **10/10 found** (full pack) | **memorization- & fitting-proof**: post-cutoff, and the hardened prompts were never tuned on these; `verify-claims` recomputes it. n=10, directional; the swarm's edge here is recall, not a coordination-beats-solo proof |
 
 **How to read these:**
@@ -248,10 +249,16 @@ Deeper reading: [WALL_FORENSICS](docs/WALL_FORENSICS.md) (per-challenge misses),
 
 | Doc | Contents |
 |---|---|
+| [Docs index](docs/README.md) | operator, developer, benchmark, and release documentation map |
+| [Getting Started](docs/GETTING_STARTED.md) | install, first launch, first safe mission, CLI basics, updates, and troubleshooting |
+| [Developer Guide](docs/DEVELOPER_GUIDE.md) | source map, scripts, SDK usage, extension points, and release checks |
+| [API Reference](docs/API_REFERENCE.md) | local HTTP API route groups and integration notes |
+| [MCP Guide](docs/MCP_GUIDE.md) | MCP server setup and `security_recon` usage |
 | [FEATURES.md](FEATURES.md) | feature-by-feature status (`[x]` shipped / `[~]` partial / `[ ]` planned) |
 | [SCOPE_AND_AUTHORIZATION](docs/SCOPE_AND_AUTHORIZATION.md) | authority model, scope receipts, evidence and retest rules |
 | [VERIFIED_PROVENANCE](docs/VERIFIED_PROVENANCE.md) | how findings become tool-proven instead of model-asserted |
 | [CONTRIBUTION_RECEIPTS](docs/CONTRIBUTION_RECEIPTS.md) | PR receipt template for scope, run mode, model/harness labels, redaction, and verification |
+| [MODEL_MATRIX](docs/MODEL_MATRIX.md) | Reproducible cross-model benchmark matrix and arbitrary variant-test model selection |
 | [TEAM_PREVIEW](docs/TEAM_PREVIEW.md) | first-run path and review script |
 | [INSTALL_MATRIX](docs/INSTALL_MATRIX.md) | macOS / Linux readiness table |
 | [ARSENAL_ACTIVATION_PLAN](docs/ARSENAL_ACTIVATION_PLAN.md) | optional external-tool setup |

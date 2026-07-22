@@ -109,6 +109,10 @@ export interface TempestSettings {
     colorOutput: boolean;
     verboseLogging: boolean;
   };
+
+  // Outbound SOCKS5 proxy for test/attack traffic (socks5://[user:pass@]host:port).
+  // Empty/unset = egress from the operator's own IP. See src/net/proxy.ts.
+  proxyUrl?: string;
 }
 
 // =============================================================================
@@ -162,8 +166,8 @@ const DEFAULT_SETTINGS: TempestSettings = {
   },
 
   deepseek: {
-    baseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
+    baseUrl: 'https://api.deepseek.com',
+    defaultModel: 'deepseek-v4-pro',
   },
 
   codex: {
@@ -186,7 +190,29 @@ const DEFAULT_SETTINGS: TempestSettings = {
     colorOutput: true,
     verboseLogging: false,
   },
+
+  proxyUrl: '',
 };
+
+export function migrateLegacyDeepSeekSettings(
+  settings: TempestSettings['deepseek'],
+): TempestSettings['deepseek'] {
+  const migrated = { ...settings };
+
+  // DeepSeek retires these compatibility aliases on 2026-07-24. Only migrate
+  // the exact historical defaults; operator-selected model IDs and endpoints
+  // remain untouched.
+  if (migrated.defaultModel === 'deepseek-chat') {
+    migrated.defaultModel = 'deepseek-v4-flash';
+  } else if (migrated.defaultModel === 'deepseek-reasoner') {
+    migrated.defaultModel = 'deepseek-v4-pro';
+  }
+  if (migrated.baseUrl === 'https://api.deepseek.com/v1') {
+    migrated.baseUrl = 'https://api.deepseek.com';
+  }
+
+  return migrated;
+}
 
 // =============================================================================
 // MODEL REGISTRY
@@ -344,22 +370,22 @@ export const AVAILABLE_MODELS: Record<LLMProvider, ModelInfo[]> = {
       maxOutput: 4096,
       capabilities: ['reasoning', 'code', 'analysis'],
     },
-    // DeepSeek (Dec 2025)
+    // DeepSeek (Jul 2026 — V4)
     {
-      id: 'deepseek/deepseek-r1',
-      name: 'DeepSeek R1',
+      id: 'deepseek/deepseek-v4-pro',
+      name: 'DeepSeek V4 Pro',
       provider: 'DeepSeek',
-      contextWindow: 64000,
-      maxOutput: 8192,
-      capabilities: ['reasoning', 'code', 'analysis', 'complex-tasks'],
+      contextWindow: 1000000,
+      maxOutput: 384000,
+      capabilities: ['reasoning', 'code', 'analysis', 'complex-tasks', 'agents', 'tools'],
     },
     {
-      id: 'deepseek/deepseek-chat',
-      name: 'DeepSeek V3',
+      id: 'deepseek/deepseek-v4-flash',
+      name: 'DeepSeek V4 Flash',
       provider: 'DeepSeek',
-      contextWindow: 64000,
-      maxOutput: 8192,
-      capabilities: ['reasoning', 'code', 'analysis'],
+      contextWindow: 1000000,
+      maxOutput: 384000,
+      capabilities: ['reasoning', 'code', 'analysis', 'tools'],
     },
     // Mistral
     {
@@ -504,20 +530,20 @@ export const AVAILABLE_MODELS: Record<LLMProvider, ModelInfo[]> = {
   ],
   deepseek: [
     {
-      id: 'deepseek-chat',
-      name: 'DeepSeek V3 (native)',
+      id: 'deepseek-v4-pro',
+      name: 'DeepSeek V4 Pro (native)',
       provider: 'DeepSeek',
-      contextWindow: 64000,
-      maxOutput: 8192,
-      capabilities: ['reasoning', 'code', 'analysis', 'tools'],
+      contextWindow: 1000000,
+      maxOutput: 384000,
+      capabilities: ['reasoning', 'code', 'analysis', 'complex-tasks', 'agents', 'tools'],
     },
     {
-      id: 'deepseek-reasoner',
-      name: 'DeepSeek R1 (native)',
+      id: 'deepseek-v4-flash',
+      name: 'DeepSeek V4 Flash (native)',
       provider: 'DeepSeek',
-      contextWindow: 64000,
-      maxOutput: 8192,
-      capabilities: ['reasoning', 'code', 'analysis', 'complex-tasks'],
+      contextWindow: 1000000,
+      maxOutput: 384000,
+      capabilities: ['reasoning', 'code', 'analysis', 'tools'],
     },
   ],
   local: [
@@ -573,6 +599,15 @@ class ConfigManager {
       projectName: 't3mp3st',
       defaults: DEFAULT_SETTINGS,
     });
+
+    const deepseek = this.config.get('deepseek');
+    const migratedDeepSeek = migrateLegacyDeepSeekSettings(deepseek);
+    if (
+      migratedDeepSeek.baseUrl !== deepseek.baseUrl ||
+      migratedDeepSeek.defaultModel !== deepseek.defaultModel
+    ) {
+      this.config.set('deepseek', migratedDeepSeek);
+    }
 
     this.loadEnvVariables();
   }
@@ -662,6 +697,21 @@ class ConfigManager {
     const apiKeys = this.config.get('apiKeys');
     apiKeys[provider] = key;
     this.config.set('apiKeys', apiKeys);
+  }
+
+  /**
+   * Outbound SOCKS5 proxy URL for test/attack traffic. Env TEMPEST_PROXY_URL wins over
+   * the saved value; returns '' when egress should leave from the operator's own IP.
+   */
+  getProxyUrl(): string {
+    const env = process.env.TEMPEST_PROXY_URL?.trim();
+    if (env) return env;
+    return (this.config.get('proxyUrl') || '').trim();
+  }
+
+  /** Persist the proxy URL (pass '' to clear). Does NOT install it — see net/proxy. */
+  setProxyUrl(url: string): void {
+    this.config.set('proxyUrl', (url || '').trim());
   }
 
   /**
@@ -844,7 +894,17 @@ class ConfigManager {
       baseUrl,
       maxTokens: this.config.get('maxTokens'),
       temperature: this.config.get('temperature'),
-      timeout: this.config.get('timeout'),
+      // Local inference is far slower than cloud APIs, so it must not inherit the cloud-tuned
+      // default timeout: floor it at 120s (matching the frontend llmTimeoutFor) and let the
+      // operator override via TEMPEST_LOCAL_TIMEOUT for very slow reasoning models.
+      timeout: actualProvider === 'local'
+        ? ((): number => {
+            const parsed = Number(process.env.TEMPEST_LOCAL_TIMEOUT);
+            return Number.isFinite(parsed) && parsed > 0
+              ? parsed
+              : Math.max(Number(this.config.get('timeout')) || 0, 120000);
+          })()
+        : this.config.get('timeout'),
       fallbackChain: this.buildFallbackChain(actualProvider),
     };
   }
