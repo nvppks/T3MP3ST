@@ -2,12 +2,14 @@ name: Harness control plane
 
 on:
   push:
-    branches: ['agent/harness-control-plane']
+    branches: ['agent/harness-control-plane', 'agent/harness-upstream-runners']
     paths:
       - 'src/harness/**'
       - 'src/integrations/burp/server.ts'
       - 'src/__tests__/harness-control-plane.test.ts'
+      - 'src/__tests__/harness-worker.test.ts'
       - 'docs/HARNESS-CONTROL-PLANE.md'
+      - 'docs/HARNESS-UPSTREAM-RUNNERS.md'
       - '.github/workflows/harness-control-plane.yml'
       - 'package.json'
   pull_request:
@@ -15,7 +17,9 @@ on:
       - 'src/harness/**'
       - 'src/integrations/burp/server.ts'
       - 'src/__tests__/harness-control-plane.test.ts'
+      - 'src/__tests__/harness-worker.test.ts'
       - 'docs/HARNESS-CONTROL-PLANE.md'
+      - 'docs/HARNESS-UPSTREAM-RUNNERS.md'
       - '.github/workflows/harness-control-plane.yml'
       - 'package.json'
 
