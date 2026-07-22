@@ -37,4 +37,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm run test:harness
+      - name: Run harness tests
+        id: harness-tests
+        shell: bash
+        run: |
+          set +e
+          npm run test:harness > harness-test.log 2>&1
+          status=$?
+          cat harness-test.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: harness-test-log
+          path: harness-test.log
+      - name: Verify harness tests
+        run: test "${{ steps.harness-tests.outputs.status }}" = "0"
