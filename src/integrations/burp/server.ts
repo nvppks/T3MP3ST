@@ -4,6 +4,10 @@ import { createBurpBridgeRouter } from './index.js';
 import { createLeakLensRouter } from '../leaklens/router.js';
 import { HarnessControlPlane } from '../../harness/control-plane.js';
 import { createHarnessRouter } from '../../harness/router.js';
+import { HarnessApprovalStore } from '../../harness/approval-store.js';
+import { createDefaultHarnessRunnerRegistry } from '../../harness/default-runners.js';
+import { HarnessWorker } from '../../harness/worker.js';
+import { createHarnessWorkerRouter } from '../../harness/worker-router.js';
 
 const host = process.env.T3MP3ST_BURP_HOST ?? '127.0.0.1';
 const port = Number(process.env.T3MP3ST_BURP_PORT ?? 3000);
@@ -18,23 +22,37 @@ const harness = await HarnessControlPlane.open({
   rootDir: harnessRoot,
   apiToken: process.env.T3MP3ST_HARNESS_TOKEN,
 });
+const approvals = await HarnessApprovalStore.open(harnessRoot);
+const registry = createDefaultHarnessRunnerRegistry();
+const worker = new HarnessWorker(harness, registry, approvals, {
+  workerId: process.env.T3MP3ST_HARNESS_WORKER_ID,
+  pollMs: Number(process.env.T3MP3ST_HARNESS_WORKER_POLL_MS ?? 500),
+  leaseMs: Number(process.env.T3MP3ST_HARNESS_WORKER_LEASE_MS ?? 60_000),
+});
+const autoWorker = /^(1|true|on)$/i.test(process.env.T3MP3ST_HARNESS_WORKER_AUTO ?? '');
+if (autoWorker) worker.start();
+
 const app = express();
 app.disable('x-powered-by');
 app.use('/api/burp', createBurpBridgeRouter());
 app.use('/api/leaklens', createLeakLensRouter());
 app.use('/api/harness', createHarnessRouter(harness));
+app.use('/api/harness', createHarnessWorkerRouter(harness, worker, approvals, registry));
 app.get('/healthz', (_req: Request, res: Response) => res.json({
   ok: true,
   services: [
     't3mp3st-burp-bridge',
     't3mp3st-leaklens-bridge',
     't3mp3st-harness-control-plane',
+    't3mp3st-harness-worker',
   ],
+  worker: worker.status(),
 }));
 
 const server = app.listen(port, host, () => {
   console.log(`[t3mp3st-burp] listening on http://${host}:${port}`);
   console.log(`[t3mp3st-harness] bearer token file: ${harness.apiTokenPath}`);
+  console.log(`[t3mp3st-harness] worker: ${autoWorker ? 'running' : 'manual'}`);
 });
 
 let shuttingDown = false;
@@ -43,6 +61,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   console.log(`[t3mp3st-burp] received ${signal}; closing`);
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  await worker.stop();
   await harness.close();
 }
 

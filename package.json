@@ -25,7 +25,7 @@
     "server:prod": "node dist/server.js",
     "harness": "tsx src/harness/server.ts",
     "harness:prod": "node dist/harness/server.js",
-    "test:harness": "vitest run src/__tests__/harness-control-plane.test.ts",
+    "test:harness": "vitest run src/__tests__/harness-control-plane.test.ts src/__tests__/harness-worker.test.ts",
     "field:drill": "node scripts/field-drill.mjs",
     "exploit:smoke": "node scripts/exploit-chain-smoke.mjs",
     "arsenal:smoke": "node scripts/arsenal-smoke.mjs",

@@ -2,12 +2,14 @@ name: Harness control plane
 
 on:
   push:
-    branches: ['agent/harness-control-plane']
+    branches: ['agent/harness-control-plane', 'agent/harness-upstream-runners']
     paths:
       - 'src/harness/**'
       - 'src/integrations/burp/server.ts'
       - 'src/__tests__/harness-control-plane.test.ts'
+      - 'src/__tests__/harness-worker.test.ts'
       - 'docs/HARNESS-CONTROL-PLANE.md'
+      - 'docs/HARNESS-UPSTREAM-RUNNERS.md'
       - '.github/workflows/harness-control-plane.yml'
       - 'package.json'
   pull_request:
@@ -15,7 +17,9 @@ on:
       - 'src/harness/**'
       - 'src/integrations/burp/server.ts'
       - 'src/__tests__/harness-control-plane.test.ts'
+      - 'src/__tests__/harness-worker.test.ts'
       - 'docs/HARNESS-CONTROL-PLANE.md'
+      - 'docs/HARNESS-UPSTREAM-RUNNERS.md'
       - '.github/workflows/harness-control-plane.yml'
       - 'package.json'
 
@@ -29,8 +33,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm run test:harness
+      - name: Run harness tests
+        id: harness-tests
+        shell: bash
+        run: |
+          set +e
+          npm run test:harness > harness-test.log 2>&1
+          status=$?
+          cat harness-test.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: harness-test-log
+          path: harness-test.log
+      - name: Verify harness tests
+        run: test "${{ steps.harness-tests.outputs.status }}" = "0"
